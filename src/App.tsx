@@ -69,6 +69,14 @@ export default function App() {
 
   // Hydration-vakt: ikke synk før vi har lest fra skyen
   const hydratedRef = useRef(false);
+  
+  // Debug: Track collection changes
+  useEffect(() => {
+    console.log('🎯 Collection state changed! New length:', collection.length);
+    if (collection.length > 0) {
+      console.log('🎯 First 3 items:', collection.slice(0, 3).map(c => `${c.name} (${c.finish}) qty:${c.qty}`));
+    }
+  }, [collection]);
 
   // -----------------------------
   // Auth
@@ -225,38 +233,72 @@ export default function App() {
   // Samlingsoperasjoner
   // -----------------------------
   async function addToCollection(card: ScryfallCard, finish: string) {
+    console.log('🃏 addToCollection called:', card.name, finish);
+    console.log('🔍 Current collection length:', collection.length);
+    
     if (!session) {
       alert("Logg inn for å lagre i sky");
       return;
     }
+    
     const key = makeOwnedKey(card, finish);
-    let addedNew = false;
+    console.log('🔑 Generated key:', key);
+    
+    // Check if card already exists
+    const existingCard = collection.find(c => c.key === key);
+    console.log('🔍 Existing card found:', existingCard ? `${existingCard.name} qty:${existingCard.qty}` : 'none');
 
-    // Simple: Update state first
+    let finalQty = 1;
+    let isNewCard = !existingCard;
+    
+    if (existingCard) {
+      finalQty = existingCard.qty + 1;
+      console.log('📈 Will update quantity to:', finalQty);
+    } else {
+      console.log('➕ Will add as new card with qty:', finalQty);
+    }
+
+    // Update state - use callback to ensure we get latest state
+    console.log('📝 Updating React state...');
     setCollection((prev) => {
+      console.log('📝 State updater called, prev length:', prev.length);
       const idx = prev.findIndex((c) => c.key === key);
+      
       if (idx >= 0) {
-        const clone = [...prev];
-        clone[idx] = { ...clone[idx], qty: clone[idx].qty + 1 };
-        return clone;
+        console.log('✏️ Found existing at index', idx, 'current qty:', prev[idx].qty);
+        const newQty = prev[idx].qty + 1;
+        console.log('✏️ Setting new qty to:', newQty);
+        
+        // Create new array with updated item
+        const newCollection = prev.map((item, index) => 
+          index === idx ? { ...item, qty: newQty } : item
+        );
+        
+        console.log('✏️ Updated collection created, length:', newCollection.length);
+        console.log('✏️ Updated item:', newCollection[idx].name, 'qty:', newCollection[idx].qty);
+        return newCollection;
+      } else {
+        console.log('➕ Adding new card to collection');
+        const owned: OwnedCard = {
+          key,
+          id: card.id,
+          name: card.name,
+          set: card.set,
+          set_name: card.set_name,
+          collector_number: card.collector_number,
+          finish,
+          qty: 1,
+          image: getCardImage(card),
+        };
+        console.log('➕ New card object created:', owned);
+        const newCollection = [owned, ...prev];
+        console.log('➕ New collection length will be:', newCollection.length);
+        return newCollection;
       }
-      const owned: OwnedCard = {
-        key,
-        id: card.id,
-        name: card.name,
-        set: card.set,
-        set_name: card.set_name,
-        collector_number: card.collector_number,
-        finish,
-        qty: 1,
-        image: getCardImage(card),
-      };
-      addedNew = true;
-      return [owned, ...prev];
     });
 
-    // Simple: Save directly to database
-    const owned: OwnedCard = {
+    // Prepare data for database with correct quantity
+    const ownedForDb: OwnedCard = {
       key,
       id: card.id,
       name: card.name,
@@ -264,25 +306,33 @@ export default function App() {
       set_name: card.set_name,
       collector_number: card.collector_number,
       finish,
-      qty: 1,
+      qty: finalQty, // Use the calculated final quantity
       image: getCardImage(card),
     };
 
     if (!supabase) {
+      console.error('❌ Supabase not available');
       notify('Database ikke tilgjengelig');
       return;
     }
 
+    console.log('💾 Saving to database with qty:', finalQty);
+    const dbItem = toDb(session.user.id, ownedForDb);
+    console.log('💾 DB item to save:', dbItem);
+    
     const { error } = await supabase
       .from("mtg_collection_items")
-      .upsert(toDb(session.user.id, owned), { onConflict: "user_id,key" });
+      .upsert(dbItem, { onConflict: "user_id,key" });
 
     if (error) {
-      console.error('Save error:', error);
+      console.error('❌ Save error:', error);
       notify(`Feil ved lagring: ${error.message}`);
     } else {
-      notify(addedNew ? `Lagt til: ${card.name} (${finish})` : `Økte antall: ${card.name} (${finish})`);
+      console.log('✅ Saved successfully to database');
+      notify(isNewCard ? `Lagt til: ${card.name} (${finish})` : `Økte antall: ${card.name} (${finish})`);
     }
+    
+    console.log('🏁 addToCollection completed');
   }
 
   function updateQty(key: string, qty: number) {
