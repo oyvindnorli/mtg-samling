@@ -264,7 +264,7 @@ export async function scryfallJson(url: string) {
       }
       
       // Hvis alle proxyer feiler med 404-lignende feil, returner tomt resultat
-      if (e1 && e1.message && e1.message.includes('404')) {
+      if (e1 && typeof e1 === 'object' && 'message' in e1 && typeof e1.message === 'string' && e1.message.includes('404')) {
         return {
           object: 'list',
           total_cards: 0,
