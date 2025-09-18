@@ -352,33 +352,80 @@ export default function App() {
   }
 
   async function decrementOne(key: string) {
+    console.log('🔻 decrementOne called for key:', key);
     if (!session) return;
-    let removed = false;
-    let itemName = "";
-    let itemFinish = "";
+    
+    // Find the current item first
+    const currentItem = collection.find(c => c.key === key);
+    if (!currentItem) {
+      console.log('❌ Item not found in collection');
+      return;
+    }
+    
+    console.log('🔍 Found item:', currentItem.name, 'current qty:', currentItem.qty);
+    
+    let willBeRemoved = currentItem.qty <= 1;
+    let newQty = currentItem.qty - 1;
+    
+    console.log('🔻 Will be removed:', willBeRemoved, 'new qty:', newQty);
 
+    // Update state
+    console.log('📝 Updating state...');
     setCollection((prev) => {
+      console.log('📝 decrementOne state updater called, prev length:', prev.length);
       const idx = prev.findIndex((c) => c.key === key);
-      if (idx < 0) return prev; // ingenting å trekke fra
-      const item = prev[idx];
-      itemName = item.name;
-      itemFinish = item.finish;
-      if (item.qty <= 1) {
-        removed = true;
-        return prev.filter((_, i) => i !== idx);
+      
+      if (idx < 0) {
+        console.log('❌ Item not found in state updater');
+        return prev;
       }
-      const clone = [...prev];
-      clone[idx] = { ...item, qty: item.qty - 1 };
-      return clone;
+      
+      const item = prev[idx];
+      console.log('✏️ Found item at index', idx, 'qty:', item.qty);
+      
+      if (item.qty <= 1) {
+        console.log('🗑️ Removing item completely');
+        const newCollection = prev.filter((_, i) => i !== idx);
+        console.log('🗑️ New collection length:', newCollection.length);
+        return newCollection;
+      } else {
+        console.log('📉 Decreasing quantity to:', item.qty - 1);
+        const newCollection = prev.map((item, index) => 
+          index === idx ? { ...item, qty: item.qty - 1 } : item
+        );
+        console.log('📉 Updated collection, new qty at index:', newCollection[idx].qty);
+        return newCollection;
+      }
     });
 
-    if (removed) {
-      await supabase?.from("mtg_collection_items")
+    // Update database
+    if (willBeRemoved) {
+      console.log('💾 Deleting from database...');
+      const { error } = await supabase?.from("mtg_collection_items")
         .delete()
         .eq("user_id", session.user.id)
         .eq("key", key);
+      
+      if (error) {
+        console.error('❌ Delete error:', error);
+      } else {
+        console.log('✅ Deleted from database');
+      }
+    } else {
+      console.log('💾 Updating database with new qty:', newQty);
+      const updatedItem = { ...currentItem, qty: newQty };
+      const { error } = await supabase?.from("mtg_collection_items")
+        .upsert(toDb(session.user.id, updatedItem), { onConflict: "user_id,key" });
+      
+      if (error) {
+        console.error('❌ Update error:', error);
+      } else {
+        console.log('✅ Updated database');
+      }
     }
-    notify(`Trakk fra: ${itemName} (${itemFinish})`);
+    
+    notify(`Trakk fra: ${currentItem.name} (${currentItem.finish})`);
+    console.log('🏁 decrementOne completed');
   }
 
   // -----------------------------
