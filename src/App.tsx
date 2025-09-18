@@ -338,14 +338,22 @@ export default function App() {
 
     // Update database
     if (willBeRemoved) {
-      await supabase?.from("mtg_collection_items")
+      const { error } = await supabase?.from("mtg_collection_items")
         .delete()
         .eq("user_id", session.user.id)
-        .eq("key", key);
+        .eq("key", key) || {};
+      
+      if (error) {
+        notify(`Feil ved sletting: ${error.message}`);
+      }
     } else {
       const updatedItem = { ...currentItem, qty: currentItem.qty - 1 };
-      await supabase?.from("mtg_collection_items")
-        .upsert(toDb(session.user.id, updatedItem), { onConflict: "user_id,key" });
+      const { error } = await supabase?.from("mtg_collection_items")
+        .upsert(toDb(session.user.id, updatedItem), { onConflict: "user_id,key" }) || {};
+      
+      if (error) {
+        notify(`Feil ved oppdatering: ${error.message}`);
+      }
     }
     
     notify(`Trakk fra: ${currentItem.name} (${currentItem.finish})`);
