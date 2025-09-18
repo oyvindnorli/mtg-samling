@@ -191,6 +191,33 @@ export async function scryfallJson(url: string) {
         return await retryRes.json();
       }
       
+      if (res1.status === 404) {
+        try {
+          const errorData = await res1.json();
+          
+          // Hvis dette er en normal "not_found" (ingen kort funnet), returner tomt resultat
+          if (errorData.object === 'error' && errorData.code === 'not_found') {
+            return {
+              object: 'list',
+              total_cards: 0,
+              has_more: false,
+              data: []
+            };
+          }
+          
+          // Annen type 404-feil
+          throw new Error(errorData.details || `Scryfall API error: ${res1.status}`);
+        } catch (jsonError) {
+          // Hvis vi ikke kan parse JSON, returner tomt resultat for 404
+          return {
+            object: 'list',
+            total_cards: 0,
+            has_more: false,
+            data: []
+          };
+        }
+      }
+      
       if (!res1.ok) throw new Error(`HTTP ${res1.status}`);
       return await res1.json();
       
@@ -200,9 +227,50 @@ export async function scryfallJson(url: string) {
       try {
         const proxyUrl2 = `https://thingproxy.freeboard.io/fetch/${apiUrl}`;
         const res2 = await fetch(proxyUrl2);
+        
+        if (res2.status === 404) {
+          // For 404, returner tomt resultat i stedet for å feile
+          return {
+            object: 'list',
+            total_cards: 0,
+            has_more: false,
+            data: []
+          };
+        }
+        
         if (res2.ok) return await res2.json();
       } catch (e2) {
         console.error('thingproxy feilet:', e2);
+      }
+      
+      // Prøv en tredje proxy som backup
+      try {
+        const proxyUrl3 = `https://proxy.cors.sh/${apiUrl}`;
+        const res3 = await fetch(proxyUrl3);
+        
+        if (res3.status === 404) {
+          // For 404, returner tomt resultat i stedet for å feile
+          return {
+            object: 'list',
+            total_cards: 0,
+            has_more: false,
+            data: []
+          };
+        }
+        
+        if (res3.ok) return await res3.json();
+      } catch (e3) {
+        console.error('proxy.cors.sh feilet:', e3);
+      }
+      
+      // Hvis alle proxyer feiler med 404-lignende feil, returner tomt resultat
+      if (e1 && e1.message && e1.message.includes('404')) {
+        return {
+          object: 'list',
+          total_cards: 0,
+          has_more: false,
+          data: []
+        };
       }
       
       throw new Error('Alle proxy-metoder feilet');
