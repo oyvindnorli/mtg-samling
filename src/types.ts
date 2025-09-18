@@ -11,6 +11,7 @@ export type ScryfallCard = {
   card_faces?: { image_uris?: ScryfallImageUris }[];
   finishes?: string[];
   digital?: boolean;
+  type_line?: string;
 
   // NYTT:
   prices?: {

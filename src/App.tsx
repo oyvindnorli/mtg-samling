@@ -268,6 +268,11 @@ export default function App() {
       image: getCardImage(card),
     };
 
+    if (!supabase) {
+      notify('Database ikke tilgjengelig');
+      return;
+    }
+
     const { error } = await supabase
       .from("mtg_collection_items")
       .upsert(toDb(session.user.id, owned), { onConflict: "user_id,key" });
