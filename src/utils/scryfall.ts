@@ -112,15 +112,19 @@ export async function scryfallJson(url: string) {
   }
 
   return schedule(async () => {
-    try {
-      // Prøv først Vite proxy i development
-      const proxyUrl = `/scryfall${apiPath}`;
-      const response = await fetch(proxyUrl, {
-        method: 'GET',
-        headers: {
-          'Accept': 'application/json',
-        }
-      });
+    // Check if we're in development (has Vite proxy) or production
+    const isDevelopment = window.location.hostname === 'localhost';
+    
+    if (isDevelopment) {
+      try {
+        // Prøv først Vite proxy i development
+        const proxyUrl = `/scryfall${apiPath}`;
+        const response = await fetch(proxyUrl, {
+          method: 'GET',
+          headers: {
+            'Accept': 'application/json',
+          }
+        });
       
       if (response.status === 429) {
         const hdr = Number(response.headers.get("retry-after"));
@@ -161,8 +165,15 @@ export async function scryfallJson(url: string) {
       
       return await response.json();
       
-    } catch (error) {
-      console.error('Vite proxy feilet, prøver fallback proxyer:', error);
+      } catch (error) {
+        console.error('Vite proxy feilet i development:', error);
+        // Fall through to production method
+      }
+    }
+    
+    // Production: Use external proxies directly
+    try {
+      console.log('Using production API method for:', apiPath);
       
       // Fallback til externe proxyer hvis Vite proxy feiler
       const apiUrl = `https://api.scryfall.com${apiPath}`;
