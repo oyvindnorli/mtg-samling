@@ -172,42 +172,40 @@ export async function scryfallJson(url: string) {
     }
     
     // Production: Use external proxies directly
+    console.log('Using production API method for:', apiPath);
+    
+    // Fallback til eksterne proxyer hvis Vite proxy feiler
+    const apiUrl = `https://api.scryfall.com${apiPath}`;
+    
     try {
-      console.log('Using production API method for:', apiPath);
+      // Prøv corsproxy.io først
+      const proxyUrl1 = `https://corsproxy.io/?${encodeURIComponent(apiUrl)}`;
+      const res1 = await fetch(proxyUrl1);
       
-      // Fallback til externe proxyer hvis Vite proxy feiler
-      const apiUrl = `https://api.scryfall.com${apiPath}`;
+      if (res1.status === 429) {
+        const hdr = Number(res1.headers.get("retry-after"));
+        const base = Number.isFinite(hdr) ? hdr * 1000 : 1200;
+        await new Promise((r) => setTimeout(r, base));
+        const retryRes = await fetch(proxyUrl1);
+        if (!retryRes.ok) throw new Error(`HTTP ${retryRes.status}`);
+        return await retryRes.json();
+      }
+      
+      if (!res1.ok) throw new Error(`HTTP ${res1.status}`);
+      return await res1.json();
+      
+    } catch (e1) {
+      console.error('corsproxy.io feilet, prøver thingproxy:', e1);
       
       try {
-        // Prøv corsproxy.io først
-        const proxyUrl1 = `https://corsproxy.io/?${encodeURIComponent(apiUrl)}`;
-        const res1 = await fetch(proxyUrl1);
-        
-        if (res1.status === 429) {
-          const hdr = Number(res1.headers.get("retry-after"));
-          const base = Number.isFinite(hdr) ? hdr * 1000 : 1200;
-          await new Promise((r) => setTimeout(r, base));
-          const retryRes = await fetch(proxyUrl1);
-          if (!retryRes.ok) throw new Error(`HTTP ${retryRes.status}`);
-          return await retryRes.json();
-        }
-        
-        if (!res1.ok) throw new Error(`HTTP ${res1.status}`);
-        return await res1.json();
-        
-      } catch (e1) {
-        console.error('corsproxy.io feilet, prøver thingproxy:', e1);
-        
-        try {
-          const proxyUrl2 = `https://thingproxy.freeboard.io/fetch/${apiUrl}`;
-          const res2 = await fetch(proxyUrl2);
-          if (res2.ok) return await res2.json();
-        } catch (e2) {
-          console.error('thingproxy feilet:', e2);
-        }
-        
-        throw new Error('Alle proxy-metoder feilet');
+        const proxyUrl2 = `https://thingproxy.freeboard.io/fetch/${apiUrl}`;
+        const res2 = await fetch(proxyUrl2);
+        if (res2.ok) return await res2.json();
+      } catch (e2) {
+        console.error('thingproxy feilet:', e2);
       }
+      
+      throw new Error('Alle proxy-metoder feilet');
     }
   });
 }
