@@ -70,13 +70,6 @@ export default function App() {
   // Hydration-vakt: ikke synk før vi har lest fra skyen
   const hydratedRef = useRef(false);
   
-  // Debug: Track collection changes
-  useEffect(() => {
-    console.log('🎯 Collection state changed! New length:', collection.length);
-    if (collection.length > 0) {
-      console.log('🎯 First 3 items:', collection.slice(0, 3).map(c => `${c.name} (${c.finish}) qty:${c.qty}`));
-    }
-  }, [collection]);
 
   // -----------------------------
   // Auth
@@ -233,52 +226,31 @@ export default function App() {
   // Samlingsoperasjoner
   // -----------------------------
   async function addToCollection(card: ScryfallCard, finish: string) {
-    console.log('🃏 addToCollection called:', card.name, finish);
-    console.log('🔍 Current collection length:', collection.length);
-    
     if (!session) {
       alert("Logg inn for å lagre i sky");
       return;
     }
     
     const key = makeOwnedKey(card, finish);
-    console.log('🔑 Generated key:', key);
-    
-    // Check if card already exists
     const existingCard = collection.find(c => c.key === key);
-    console.log('🔍 Existing card found:', existingCard ? `${existingCard.name} qty:${existingCard.qty}` : 'none');
-
     let finalQty = 1;
     let isNewCard = !existingCard;
     
     if (existingCard) {
       finalQty = existingCard.qty + 1;
-      console.log('📈 Will update quantity to:', finalQty);
-    } else {
-      console.log('➕ Will add as new card with qty:', finalQty);
     }
 
-    // Update state - use callback to ensure we get latest state
-    console.log('📝 Updating React state...');
+    // Update state
     setCollection((prev) => {
-      console.log('📝 State updater called, prev length:', prev.length);
       const idx = prev.findIndex((c) => c.key === key);
       
       if (idx >= 0) {
-        console.log('✏️ Found existing at index', idx, 'current qty:', prev[idx].qty);
-        const newQty = prev[idx].qty + 1;
-        console.log('✏️ Setting new qty to:', newQty);
-        
-        // Create new array with updated item
-        const newCollection = prev.map((item, index) => 
-          index === idx ? { ...item, qty: newQty } : item
+        // Update existing card quantity
+        return prev.map((item, index) => 
+          index === idx ? { ...item, qty: item.qty + 1 } : item
         );
-        
-        console.log('✏️ Updated collection created, length:', newCollection.length);
-        console.log('✏️ Updated item:', newCollection[idx].name, 'qty:', newCollection[idx].qty);
-        return newCollection;
       } else {
-        console.log('➕ Adding new card to collection');
+        // Add new card
         const owned: OwnedCard = {
           key,
           id: card.id,
@@ -290,14 +262,11 @@ export default function App() {
           qty: 1,
           image: getCardImage(card),
         };
-        console.log('➕ New card object created:', owned);
-        const newCollection = [owned, ...prev];
-        console.log('➕ New collection length will be:', newCollection.length);
-        return newCollection;
+        return [owned, ...prev];
       }
     });
 
-    // Prepare data for database with correct quantity
+    // Save to database
     const ownedForDb: OwnedCard = {
       key,
       id: card.id,
@@ -306,33 +275,24 @@ export default function App() {
       set_name: card.set_name,
       collector_number: card.collector_number,
       finish,
-      qty: finalQty, // Use the calculated final quantity
+      qty: finalQty,
       image: getCardImage(card),
     };
 
     if (!supabase) {
-      console.error('❌ Supabase not available');
       notify('Database ikke tilgjengelig');
       return;
     }
 
-    console.log('💾 Saving to database with qty:', finalQty);
-    const dbItem = toDb(session.user.id, ownedForDb);
-    console.log('💾 DB item to save:', dbItem);
-    
     const { error } = await supabase
       .from("mtg_collection_items")
-      .upsert(dbItem, { onConflict: "user_id,key" });
+      .upsert(toDb(session.user.id, ownedForDb), { onConflict: "user_id,key" });
 
     if (error) {
-      console.error('❌ Save error:', error);
       notify(`Feil ved lagring: ${error.message}`);
     } else {
-      console.log('✅ Saved successfully to database');
       notify(isNewCard ? `Lagt til: ${card.name} (${finish})` : `Økte antall: ${card.name} (${finish})`);
     }
-    
-    console.log('🏁 addToCollection completed');
   }
 
   function updateQty(key: string, qty: number) {
@@ -352,80 +312,43 @@ export default function App() {
   }
 
   async function decrementOne(key: string) {
-    console.log('🔻 decrementOne called for key:', key);
     if (!session) return;
     
-    // Find the current item first
     const currentItem = collection.find(c => c.key === key);
-    if (!currentItem) {
-      console.log('❌ Item not found in collection');
-      return;
-    }
+    if (!currentItem) return;
     
-    console.log('🔍 Found item:', currentItem.name, 'current qty:', currentItem.qty);
-    
-    let willBeRemoved = currentItem.qty <= 1;
-    let newQty = currentItem.qty - 1;
-    
-    console.log('🔻 Will be removed:', willBeRemoved, 'new qty:', newQty);
+    const willBeRemoved = currentItem.qty <= 1;
 
     // Update state
-    console.log('📝 Updating state...');
     setCollection((prev) => {
-      console.log('📝 decrementOne state updater called, prev length:', prev.length);
       const idx = prev.findIndex((c) => c.key === key);
-      
-      if (idx < 0) {
-        console.log('❌ Item not found in state updater');
-        return prev;
-      }
+      if (idx < 0) return prev;
       
       const item = prev[idx];
-      console.log('✏️ Found item at index', idx, 'qty:', item.qty);
-      
       if (item.qty <= 1) {
-        console.log('🗑️ Removing item completely');
-        const newCollection = prev.filter((_, i) => i !== idx);
-        console.log('🗑️ New collection length:', newCollection.length);
-        return newCollection;
+        // Remove item completely
+        return prev.filter((_, i) => i !== idx);
       } else {
-        console.log('📉 Decreasing quantity to:', item.qty - 1);
-        const newCollection = prev.map((item, index) => 
+        // Decrease quantity
+        return prev.map((item, index) => 
           index === idx ? { ...item, qty: item.qty - 1 } : item
         );
-        console.log('📉 Updated collection, new qty at index:', newCollection[idx].qty);
-        return newCollection;
       }
     });
 
     // Update database
     if (willBeRemoved) {
-      console.log('💾 Deleting from database...');
-      const { error } = await supabase?.from("mtg_collection_items")
+      await supabase?.from("mtg_collection_items")
         .delete()
         .eq("user_id", session.user.id)
         .eq("key", key);
-      
-      if (error) {
-        console.error('❌ Delete error:', error);
-      } else {
-        console.log('✅ Deleted from database');
-      }
     } else {
-      console.log('💾 Updating database with new qty:', newQty);
-      const updatedItem = { ...currentItem, qty: newQty };
-      const { error } = await supabase?.from("mtg_collection_items")
+      const updatedItem = { ...currentItem, qty: currentItem.qty - 1 };
+      await supabase?.from("mtg_collection_items")
         .upsert(toDb(session.user.id, updatedItem), { onConflict: "user_id,key" });
-      
-      if (error) {
-        console.error('❌ Update error:', error);
-      } else {
-        console.log('✅ Updated database');
-      }
     }
     
     notify(`Trakk fra: ${currentItem.name} (${currentItem.finish})`);
-    console.log('🏁 decrementOne completed');
   }
 
   // -----------------------------
