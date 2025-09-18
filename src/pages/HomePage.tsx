@@ -58,9 +58,18 @@ export default function HomePage({
       ctrlRef.current?.abort();
       ctrlRef.current = new AbortController();
 
+      // Validate query - don't search if it looks like a URL
+      if (query.includes('http://') || query.includes('https://')) {
+        console.warn('Query looks like URL, skipping search:', query);
+        setResults([]);
+        setNextPage(null);
+        setIsLoading(false);
+        return;
+      }
+
       // Bygg URL manuelt for å unngå encoding-problemer
       const searchParams = new URLSearchParams();
-      searchParams.set("q", `${query} -is:digital`); // Exclude digital cards
+      searchParams.set("q", `${query.trim()} -is:digital`); // Exclude digital cards
       if (!groupPrints) searchParams.set("unique", "prints");
       
       const searchUrl = `/cards/search?${searchParams.toString()}`;
@@ -72,7 +81,7 @@ export default function HomePage({
         // Hvis første søk feiler med 404, prøv name-søk
         if (firstError?.message?.includes("404") && !query.includes(":")) {
           const nameSearchParams = new URLSearchParams();
-          nameSearchParams.set("q", `name:"${query}" -is:digital`);
+          nameSearchParams.set("q", `name:"${query.trim()}" -is:digital`);
           if (!groupPrints) nameSearchParams.set("unique", "prints");
           
           const nameSearchUrl = `/cards/search?${nameSearchParams.toString()}`;
