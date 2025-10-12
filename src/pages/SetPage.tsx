@@ -385,17 +385,9 @@ export default function SetPage({
                     return ownedQty === 0; // Vis bare kort som ikke eies
                   } else {
                     // Når vi viser unike navn: sjekk om vi eier NOEN variant av kortet
-                    const ownedAnyVariant = collection.some(item => {
-                      const matches = item.name === c.name && item.set === c.set;
-                      if (c.name === "Haliya, Guided by Light") {
-                        console.log(`Checking ${c.name} #${c.collector_number}:`, {
-                          card: { name: c.name, set: c.set, cn: c.collector_number },
-                          collectionItem: { name: item.name, set: item.set, cn: item.collector_number },
-                          matches
-                        });
-                      }
-                      return matches;
-                    });
+                    const ownedAnyVariant = collection.some(item =>
+                      item.name === c.name && item.set === c.set
+                    );
                     return !ownedAnyVariant; // Vis bare kort der vi ikke eier noen variant
                   }
                 }
@@ -502,17 +494,9 @@ export default function SetPage({
                 return ownedQty === 0; // Vis bare kort som ikke eies
               } else {
                 // Når vi viser unike navn: sjekk om vi eier NOEN variant av kortet
-                const ownedAnyVariant = collection.some(item => {
-                  const matches = item.name === c.name && item.set === c.set;
-                  if (c.name === "Haliya, Guided by Light") {
-                    console.log(`[IMG] Checking ${c.name} #${c.collector_number}:`, {
-                      card: { name: c.name, set: c.set, cn: c.collector_number },
-                      collectionItem: { name: item.name, set: item.set, cn: item.collector_number },
-                      matches
-                    });
-                  }
-                  return matches;
-                });
+                const ownedAnyVariant = collection.some(item =>
+                  item.name === c.name && item.set === c.set
+                );
                 return !ownedAnyVariant; // Vis bare kort der vi ikke eier noen variant
               }
             }
