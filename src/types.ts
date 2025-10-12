@@ -38,6 +38,7 @@ export type SearchResult = {
   data: ScryfallCard[];
   has_more?: boolean;
   next_page?: string;
+  total_cards?: number;
 };
 
 export type OwnedCard = {

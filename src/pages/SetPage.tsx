@@ -108,11 +108,32 @@ export default function SetPage({
       if (data.object !== "list") throw new Error("Ugyldig svar fra Scryfall");
 
       setCards(data.data);
-      setNext(data.has_more && data.next_page ? data.next_page : null);
-      
+
       // Sett serienavnet fra det første kortet
       if (data.data && data.data.length > 0 && data.data[0].set_name) {
         setSetName(data.data[0].set_name);
+      }
+
+      // Auto-last alle kort hvis settet er rimelig stort (mindre enn 500 kort totalt)
+      if (data.has_more && data.next_page && data.total_cards && data.total_cards <= 500) {
+        let nextUrl: string | null = data.next_page;
+        let allCards = [...data.data];
+
+        while (nextUrl && !cancelled) {
+          await sleep(100); // Kort pause mellom requests for å være snill mot Scryfall
+          const nextData = await fetchList(nextUrl);
+          if (cancelled) break;
+
+          allCards = [...allCards, ...nextData.data];
+          nextUrl = nextData.has_more && nextData.next_page ? nextData.next_page : null;
+        }
+
+        if (!cancelled) {
+          setCards(allCards);
+          setNext(null); // Ingen flere å laste
+        }
+      } else {
+        setNext(data.has_more && data.next_page ? data.next_page : null);
       }
     } catch (e: any) {
       if (!cancelled) setErrorMsg(e?.message || "Klarte ikke å hente fra Scryfall.");
