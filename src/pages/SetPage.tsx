@@ -61,6 +61,7 @@ export default function SetPage({
   const [showListView, setShowListView] = useState(false);
   const [sortBy, setSortBy] = useState<'name' | 'price' | 'collector_number' | 'rarity' | 'owned'>('name');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+  const [rarityFilter, setRarityFilter] = useState<string[]>([]);
 
 
   useEffect(() => {
@@ -203,23 +204,30 @@ export default function SetPage({
             {(() => {
               if (!eurToNok || cards.length === 0) return null;
               
-              // Filtrer kort basert på "kun mangler" innstilling
-              const filteredCards = showOnlyMissing
-                ? cards.filter(card => {
-                    if (showAllVariations) {
-                      // Når vi viser alle variasjoner: sjekk kun denne spesifikke ID-en
-                      const ownedCards = collection.filter(item => item.id === card.id);
-                      const ownedQty = ownedCards.reduce((sum, item) => sum + item.qty, 0);
-                      return ownedQty === 0;
-                    } else {
-                      // Når vi viser unike navn: sjekk om vi eier NOEN variant av kortet
-                      const ownedAnyVariant = collection.some(item =>
-                        item.name === card.name && item.set === card.set
-                      );
-                      return !ownedAnyVariant;
-                    }
-                  })
-                : cards;
+              // Filtrer kort basert på rarity og "kun mangler"
+              const filteredCards = cards.filter(card => {
+                // Rarity filter
+                if (rarityFilter.length > 0 && !rarityFilter.includes(card.rarity)) {
+                  return false;
+                }
+
+                // "Kun mangler" filter
+                if (showOnlyMissing) {
+                  if (showAllVariations) {
+                    // Når vi viser alle variasjoner: sjekk kun denne spesifikke ID-en
+                    const ownedCards = collection.filter(item => item.id === card.id);
+                    const ownedQty = ownedCards.reduce((sum, item) => sum + item.qty, 0);
+                    return ownedQty === 0;
+                  } else {
+                    // Når vi viser unike navn: sjekk om vi eier NOEN variant av kortet
+                    const ownedAnyVariant = collection.some(item =>
+                      item.name === card.name && item.set === card.set
+                    );
+                    return !ownedAnyVariant;
+                  }
+                }
+                return true;
+              });
               
               // Beregn totalpris for filtrerte kort
               const totalSetEur = filteredCards.reduce((sum, card) => {
@@ -294,22 +302,61 @@ export default function SetPage({
           )}
         </div>
         
-        <div className="flex items-center gap-2">
-          <Toggle
-            checked={showAllVariations}
-            onChange={setShowAllVariations}
-            label={showAllVariations ? "Alle variasjoner" : "Unike navn"}
-          />
-          <Toggle
-            checked={showOnlyMissing}
-            onChange={setShowOnlyMissing}
-            label={showOnlyMissing ? "Kun mangler" : "Alle kort"}
-          />
-          <Toggle
-            checked={showListView}
-            onChange={setShowListView}
-            label={showListView ? "Liste" : "Bilder"}
-          />
+        <div className="flex flex-col gap-2">
+          <div className="flex items-center gap-2">
+            <Toggle
+              checked={showAllVariations}
+              onChange={setShowAllVariations}
+              label={showAllVariations ? "Alle variasjoner" : "Unike navn"}
+            />
+            <Toggle
+              checked={showOnlyMissing}
+              onChange={setShowOnlyMissing}
+              label={showOnlyMissing ? "Kun mangler" : "Alle kort"}
+            />
+            <Toggle
+              checked={showListView}
+              onChange={setShowListView}
+              label={showListView ? "Liste" : "Bilder"}
+            />
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-gray-600">Rarity:</span>
+            {['common', 'uncommon', 'rare', 'mythic'].map(rarity => {
+              const isSelected = rarityFilter.includes(rarity);
+              return (
+                <button
+                  key={rarity}
+                  onClick={() => {
+                    if (isSelected) {
+                      setRarityFilter(rarityFilter.filter(r => r !== rarity));
+                    } else {
+                      setRarityFilter([...rarityFilter, rarity]);
+                    }
+                  }}
+                  className={`text-xs px-2 py-1 rounded-full font-semibold transition-colors ${
+                    isSelected
+                      ? rarity === 'mythic' ? 'bg-red-500 text-white' :
+                        rarity === 'rare' ? 'bg-yellow-500 text-white' :
+                        rarity === 'uncommon' ? 'bg-gray-500 text-white' :
+                        'bg-green-500 text-white'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                >
+                  {rarity}
+                </button>
+              );
+            })}
+            {rarityFilter.length > 0 && (
+              <button
+                onClick={() => setRarityFilter([])}
+                className="text-xs text-gray-500 hover:text-gray-700 underline"
+              >
+                Nullstill
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
@@ -397,6 +444,11 @@ export default function SetPage({
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
               {cards.filter((c) => {
+                // Rarity filter
+                if (rarityFilter.length > 0 && !rarityFilter.includes(c.rarity)) {
+                  return false;
+                }
+
                 // Hvis "Kun mangler" er aktivert, vis bare kort som ikke er i samlingen
                 if (showOnlyMissing) {
                   if (showAllVariations) {
@@ -506,6 +558,11 @@ export default function SetPage({
         // Bild-visning (eksisterende)
         <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
           {cards.filter((c) => {
+            // Rarity filter
+            if (rarityFilter.length > 0 && !rarityFilter.includes(c.rarity)) {
+              return false;
+            }
+
             // Hvis "Kun mangler" er aktivert, vis bare kort som ikke er i samlingen
             if (showOnlyMissing) {
               if (showAllVariations) {
