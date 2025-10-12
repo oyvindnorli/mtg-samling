@@ -183,11 +183,20 @@ export default function SetPage({
               if (!eurToNok || cards.length === 0) return null;
               
               // Filtrer kort basert på "kun mangler" innstilling
-              const filteredCards = showOnlyMissing 
+              const filteredCards = showOnlyMissing
                 ? cards.filter(card => {
-                    const ownedCards = collection.filter(item => item.id === card.id);
-                    const ownedQty = ownedCards.reduce((sum, item) => sum + item.qty, 0);
-                    return ownedQty === 0;
+                    if (showAllVariations) {
+                      // Når vi viser alle variasjoner: sjekk kun denne spesifikke ID-en
+                      const ownedCards = collection.filter(item => item.id === card.id);
+                      const ownedQty = ownedCards.reduce((sum, item) => sum + item.qty, 0);
+                      return ownedQty === 0;
+                    } else {
+                      // Når vi viser unike navn: sjekk om vi eier NOEN variant av kortet
+                      const ownedAnyVariant = collection.some(item =>
+                        item.name === card.name && item.set === card.set
+                      );
+                      return !ownedAnyVariant;
+                    }
                   })
                 : cards;
               
@@ -369,9 +378,26 @@ export default function SetPage({
               {cards.filter((c) => {
                 // Hvis "Kun mangler" er aktivert, vis bare kort som ikke er i samlingen
                 if (showOnlyMissing) {
-                  const ownedCards = collection.filter(item => item.id === c.id);
-                  const ownedQty = ownedCards.reduce((sum, item) => sum + item.qty, 0);
-                  return ownedQty === 0; // Vis bare kort som ikke eies
+                  if (showAllVariations) {
+                    // Når vi viser alle variasjoner: sjekk kun denne spesifikke ID-en
+                    const ownedCards = collection.filter(item => item.id === c.id);
+                    const ownedQty = ownedCards.reduce((sum, item) => sum + item.qty, 0);
+                    return ownedQty === 0; // Vis bare kort som ikke eies
+                  } else {
+                    // Når vi viser unike navn: sjekk om vi eier NOEN variant av kortet
+                    const ownedAnyVariant = collection.some(item => {
+                      const matches = item.name === c.name && item.set === c.set;
+                      if (c.name === "Haliya, Guided by Light") {
+                        console.log(`Checking ${c.name} #${c.collector_number}:`, {
+                          card: { name: c.name, set: c.set, cn: c.collector_number },
+                          collectionItem: { name: item.name, set: item.set, cn: item.collector_number },
+                          matches
+                        });
+                      }
+                      return matches;
+                    });
+                    return !ownedAnyVariant; // Vis bare kort der vi ikke eier noen variant
+                  }
                 }
                 return true; // Vis alle kort
               })
@@ -469,9 +495,26 @@ export default function SetPage({
           {cards.filter((c) => {
             // Hvis "Kun mangler" er aktivert, vis bare kort som ikke er i samlingen
             if (showOnlyMissing) {
-              const ownedCards = collection.filter(item => item.id === c.id);
-              const ownedQty = ownedCards.reduce((sum, item) => sum + item.qty, 0);
-              return ownedQty === 0; // Vis bare kort som ikke eies
+              if (showAllVariations) {
+                // Når vi viser alle variasjoner: sjekk kun denne spesifikke ID-en
+                const ownedCards = collection.filter(item => item.id === c.id);
+                const ownedQty = ownedCards.reduce((sum, item) => sum + item.qty, 0);
+                return ownedQty === 0; // Vis bare kort som ikke eies
+              } else {
+                // Når vi viser unike navn: sjekk om vi eier NOEN variant av kortet
+                const ownedAnyVariant = collection.some(item => {
+                  const matches = item.name === c.name && item.set === c.set;
+                  if (c.name === "Haliya, Guided by Light") {
+                    console.log(`[IMG] Checking ${c.name} #${c.collector_number}:`, {
+                      card: { name: c.name, set: c.set, cn: c.collector_number },
+                      collectionItem: { name: item.name, set: item.set, cn: item.collector_number },
+                      matches
+                    });
+                  }
+                  return matches;
+                });
+                return !ownedAnyVariant; // Vis bare kort der vi ikke eier noen variant
+              }
             }
             return true; // Vis alle kort
           }).map((c) => {
