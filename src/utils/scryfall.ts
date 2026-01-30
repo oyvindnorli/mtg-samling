@@ -171,30 +171,25 @@ export async function scryfallJson(url: string) {
       }
     }
     
-    // Production: Use external proxies directly
-    console.log('Using production API method for:', apiPath);
-    
-    // Fallback til eksterne proxyer hvis Vite proxy feiler
-    const apiUrl = `https://api.scryfall.com${apiPath}`;
-    
+    // Production: Use our own Vercel serverless proxy
+    const proxyUrl = `/api/scryfall?path=${encodeURIComponent(apiPath)}`;
+
     try {
-      // Prøv corsproxy.io først
-      const proxyUrl1 = `https://corsproxy.io/?${encodeURIComponent(apiUrl)}`;
-      const res1 = await fetch(proxyUrl1);
-      
-      if (res1.status === 429) {
-        const hdr = Number(res1.headers.get("retry-after"));
-        const base = Number.isFinite(hdr) ? hdr * 1000 : 1200;
+      const res = await fetch(proxyUrl);
+
+      if (res.status === 429) {
+        const hdr = Number(res.headers.get("retry-after"));
+        const base = Number.isFinite(hdr) ? hdr * 1000 : 2000;
         await new Promise((r) => setTimeout(r, base));
-        const retryRes = await fetch(proxyUrl1);
+        const retryRes = await fetch(proxyUrl);
         if (!retryRes.ok) throw new Error(`HTTP ${retryRes.status}`);
         return await retryRes.json();
       }
-      
-      if (res1.status === 404) {
+
+      if (res.status === 404) {
         try {
-          const errorData = await res1.json();
-          
+          const errorData = await res.json();
+
           // Hvis dette er en normal "not_found" (ingen kort funnet), returner tomt resultat
           if (errorData.object === 'error' && errorData.code === 'not_found') {
             return {
@@ -204,10 +199,10 @@ export async function scryfallJson(url: string) {
               data: []
             };
           }
-          
+
           // Annen type 404-feil
-          throw new Error(errorData.details || `Scryfall API error: ${res1.status}`);
-        } catch (jsonError) {
+          throw new Error(errorData.details || `Scryfall API error: ${res.status}`);
+        } catch {
           // Hvis vi ikke kan parse JSON, returner tomt resultat for 404
           return {
             object: 'list',
@@ -217,63 +212,13 @@ export async function scryfallJson(url: string) {
           };
         }
       }
-      
-      if (!res1.ok) throw new Error(`HTTP ${res1.status}`);
-      return await res1.json();
-      
-    } catch (e1) {
-      console.error('corsproxy.io feilet, prøver thingproxy:', e1);
-      
-      try {
-        const proxyUrl2 = `https://thingproxy.freeboard.io/fetch/${apiUrl}`;
-        const res2 = await fetch(proxyUrl2);
-        
-        if (res2.status === 404) {
-          // For 404, returner tomt resultat i stedet for å feile
-          return {
-            object: 'list',
-            total_cards: 0,
-            has_more: false,
-            data: []
-          };
-        }
-        
-        if (res2.ok) return await res2.json();
-      } catch (e2) {
-        console.error('thingproxy feilet:', e2);
-      }
-      
-      // Prøv en tredje proxy som backup
-      try {
-        const proxyUrl3 = `https://proxy.cors.sh/${apiUrl}`;
-        const res3 = await fetch(proxyUrl3);
-        
-        if (res3.status === 404) {
-          // For 404, returner tomt resultat i stedet for å feile
-          return {
-            object: 'list',
-            total_cards: 0,
-            has_more: false,
-            data: []
-          };
-        }
-        
-        if (res3.ok) return await res3.json();
-      } catch (e3) {
-        console.error('proxy.cors.sh feilet:', e3);
-      }
-      
-      // Hvis alle proxyer feiler med 404-lignende feil, returner tomt resultat
-      if (e1 && typeof e1 === 'object' && 'message' in e1 && typeof e1.message === 'string' && e1.message.includes('404')) {
-        return {
-          object: 'list',
-          total_cards: 0,
-          has_more: false,
-          data: []
-        };
-      }
-      
-      throw new Error('Alle proxy-metoder feilet');
+
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return await res.json();
+
+    } catch (e) {
+      console.error('Vercel proxy feilet:', e);
+      throw new Error('Kunne ikke hente data fra Scryfall');
     }
   });
 }
