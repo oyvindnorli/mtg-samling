@@ -10,6 +10,7 @@ type SetMeta = {
 };
 
 const CACHE_KEY = "scryfall_set_meta";
+const ALL_SETS_CACHE_KEY = "scryfall_all_sets";
 const TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
 function getCache(): Record<string, SetMeta> {
@@ -30,6 +31,54 @@ function setCache(cache: Record<string, SetMeta>) {
   }
 }
 
+// Fetch all sets in one request and cache them
+async function fetchAllSets(): Promise<Record<string, SetMeta>> {
+  // Check if we have a recent all-sets fetch
+  try {
+    const cached = localStorage.getItem(ALL_SETS_CACHE_KEY);
+    if (cached) {
+      const { fetchedAt, data } = JSON.parse(cached);
+      if (Date.now() - fetchedAt < TTL_MS) {
+        return data;
+      }
+    }
+  } catch {
+    // Cache read failed, continue to fetch
+  }
+
+  // Fetch all sets from Scryfall (single request)
+  const response = await scryfallJson("/sets");
+  if (response.object !== "list" || !Array.isArray(response.data)) {
+    return {};
+  }
+
+  const result: Record<string, SetMeta> = {};
+  const now = Date.now();
+
+  for (const set of response.data) {
+    result[set.code] = {
+      card_count: set.card_count,
+      name: set.name,
+      fetchedAt: now,
+    };
+  }
+
+  // Cache the result
+  try {
+    localStorage.setItem(ALL_SETS_CACHE_KEY, JSON.stringify({
+      fetchedAt: now,
+      data: result,
+    }));
+  } catch {
+    // localStorage full or unavailable
+  }
+
+  // Also update individual cache for backwards compatibility
+  setCache({ ...getCache(), ...result });
+
+  return result;
+}
+
 export async function getSetMeta(setCode: string): Promise<SetMeta | null> {
   const cache = getCache();
   const cached = cache[setCode];
@@ -39,7 +88,13 @@ export async function getSetMeta(setCode: string): Promise<SetMeta | null> {
     return cached;
   }
 
-  // Fetch from Scryfall
+  // Try fetching all sets (usually from cache)
+  const allSets = await fetchAllSets();
+  if (allSets[setCode]) {
+    return allSets[setCode];
+  }
+
+  // Fallback: fetch individual set
   try {
     const data = await scryfallJson(`/sets/${setCode}`);
     if (data.object === "set") {
@@ -48,8 +103,9 @@ export async function getSetMeta(setCode: string): Promise<SetMeta | null> {
         name: data.name,
         fetchedAt: Date.now(),
       };
-      cache[setCode] = meta;
-      setCache(cache);
+      const newCache = getCache();
+      newCache[setCode] = meta;
+      setCache(newCache);
       return meta;
     }
   } catch {
@@ -61,26 +117,14 @@ export async function getSetMeta(setCode: string): Promise<SetMeta | null> {
 }
 
 // Batch fetch multiple sets (for statistics page)
+// Now uses single /sets request instead of one request per set
 export async function getSetMetaBatch(setCodes: string[]): Promise<Record<string, SetMeta>> {
-  const cache = getCache();
+  const allSets = await fetchAllSets();
+
   const result: Record<string, SetMeta> = {};
-  const toFetch: string[] = [];
-
-  // Check cache first
   for (const code of setCodes) {
-    const cached = cache[code];
-    if (cached && Date.now() - cached.fetchedAt < TTL_MS) {
-      result[code] = cached;
-    } else {
-      toFetch.push(code);
-    }
-  }
-
-  // Fetch missing ones (with rate limiting)
-  for (const code of toFetch) {
-    const meta = await getSetMeta(code);
-    if (meta) {
-      result[code] = meta;
+    if (allSets[code]) {
+      result[code] = allSets[code];
     }
   }
 
