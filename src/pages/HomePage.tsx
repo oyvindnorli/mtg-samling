@@ -165,6 +165,9 @@ export default function HomePage({
           <Button variant="outline">Importer</Button>
           <input type="file" accept="application/json" className="hidden" onChange={onImport} />
         </label>
+        <Link to="/statistics" className="text-sm underline underline-offset-2">
+          Statistikk
+        </Link>
       </div>
 
       <SearchBar value={query} onChange={setQuery} isLoading={isLoading} />

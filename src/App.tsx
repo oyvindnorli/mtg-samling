@@ -12,6 +12,7 @@ import Badge from "./components/Badge";
 
 import HomePage from "./pages/HomePage";
 import SetPage from "./pages/SetPage";
+import StatisticsPage from "./pages/StatisticsPage";
 
 // -----------------------------
 // DB mapping
@@ -476,6 +477,10 @@ export default function App() {
                 decrementOne={decrementOne}
               />
             }
+          />
+          <Route
+            path="/statistics"
+            element={<StatisticsPage collection={collection} />}
           />
         </Routes>
       </div>

@@ -66,3 +66,19 @@ export type DbCollectionItem = {
   image: string | null;
   updated_at?: string;
 };
+
+export type SetStats = {
+  set: string;
+  set_name: string;
+  totalQty: number;
+  uniqueCards: number;
+  setCardCount?: number;
+  completionPercent?: number;
+};
+
+export type CollectionStats = {
+  totalQty: number;
+  totalUniqueCards: number;
+  totalSets: number;
+  setStats: SetStats[];
+};
