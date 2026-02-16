@@ -168,6 +168,9 @@ export default function HomePage({
         <Link to="/statistics" className="text-sm underline underline-offset-2">
           Statistikk
         </Link>
+        <Link to="/check" className="text-sm underline underline-offset-2">
+          Sjekk kortliste
+        </Link>
       </div>
 
       <SearchBar value={query} onChange={setQuery} isLoading={isLoading} />

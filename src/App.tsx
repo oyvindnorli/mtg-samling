@@ -13,6 +13,7 @@ import Badge from "./components/Badge";
 import HomePage from "./pages/HomePage";
 import SetPage from "./pages/SetPage";
 import StatisticsPage from "./pages/StatisticsPage";
+import CheckListPage from "./pages/CheckListPage";
 
 // -----------------------------
 // DB mapping
@@ -481,6 +482,10 @@ export default function App() {
           <Route
             path="/statistics"
             element={<StatisticsPage collection={collection} />}
+          />
+          <Route
+            path="/check"
+            element={<CheckListPage collection={collection} />}
           />
         </Routes>
       </div>
