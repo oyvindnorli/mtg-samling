@@ -76,10 +76,17 @@ export default function StatisticsPage({
   }, [stats.setStats.length]);
 
   // Fetch rarity data from Scryfall /cards/collection (POST, max 75 per batch)
+  // Stable key: only re-run when the set of unique card IDs actually changes
+  const rarityKey = useMemo(
+    () => [...new Set(collection.map((c) => c.id))].sort().join(","),
+    [collection],
+  );
+
   useEffect(() => {
     if (collection.length === 0) return;
 
     const uniqueIds = [...new Set(collection.map((c) => c.id))];
+    setRarityCounts(null);
     setRarityLoading(true);
 
     // qty per card id (summert over finishes)
@@ -94,14 +101,14 @@ export default function StatisticsPage({
       batches.push(uniqueIds.slice(i, i + BATCH_SIZE).map((id) => ({ id })));
     }
 
-    let cancelled = false;
+    const ctrl = new AbortController();
 
     (async () => {
       const counts: Record<string, number> = {};
       try {
         const isDev = window.location.hostname === "localhost";
         for (const batch of batches) {
-          if (cancelled) return;
+          if (ctrl.signal.aborted) return;
           const url = isDev
             ? "/scryfall/cards/collection"
             : "/api/scryfall?path=/cards/collection";
@@ -109,8 +116,12 @@ export default function StatisticsPage({
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ identifiers: batch }),
+            signal: ctrl.signal,
           });
-          if (!res.ok) continue;
+          if (!res.ok) {
+            console.warn("Rarity batch feilet:", res.status);
+            continue;
+          }
           const json = await res.json();
           for (const card of json.data ?? []) {
             const rarity: string = card.rarity ?? "unknown";
@@ -118,16 +129,18 @@ export default function StatisticsPage({
             counts[rarity] = (counts[rarity] || 0) + qty;
           }
         }
-        if (!cancelled) setRarityCounts(counts);
-      } catch (e) {
-        console.error("Feil ved henting av rarity:", e);
+        if (!ctrl.signal.aborted) setRarityCounts(counts);
+      } catch (e: any) {
+        if (e?.name !== "AbortError") {
+          console.error("Feil ved henting av rarity:", e);
+        }
       } finally {
-        if (!cancelled) setRarityLoading(false);
+        setRarityLoading(false);
       }
     })();
 
-    return () => { cancelled = true; };
-  }, [collection]);
+    return () => ctrl.abort();
+  }, [rarityKey]);
 
   return (
     <div>
