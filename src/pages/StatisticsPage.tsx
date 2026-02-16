@@ -106,20 +106,17 @@ export default function StatisticsPage({
     (async () => {
       const counts: Record<string, number> = {};
       try {
-        const isDev = window.location.hostname === "localhost";
         for (const batch of batches) {
           if (ctrl.signal.aborted) return;
-          const url = isDev
-            ? "/scryfall/cards/collection"
-            : "/api/scryfall?path=/cards/collection";
-          const res = await fetch(url, {
+          // POST direkte til Scryfall (støtter CORS)
+          const res = await fetch("https://api.scryfall.com/cards/collection", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ identifiers: batch }),
             signal: ctrl.signal,
           });
           if (!res.ok) {
-            console.warn("Rarity batch feilet:", res.status);
+            console.warn("Rarity batch feilet:", res.status, await res.text());
             continue;
           }
           const json = await res.json();
