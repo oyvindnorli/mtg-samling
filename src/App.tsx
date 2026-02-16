@@ -28,6 +28,7 @@ function toDb(userId: string, item: OwnedCard): DbCollectionItem {
     set_name: item.set_name,
     collector_number: item.collector_number,
     finish: item.finish,
+    rarity: item.rarity ?? null,
     qty: item.qty,
     image: item.image ?? null,
     updated_at: new Date().toISOString(),
@@ -42,6 +43,7 @@ function fromDb(row: DbCollectionItem): OwnedCard {
     set_name: row.set_name,
     collector_number: row.collector_number,
     finish: row.finish,
+    rarity: row.rarity ?? undefined,
     qty: row.qty,
     image: row.image ?? undefined,
   };
@@ -105,7 +107,7 @@ export default function App() {
       while (true) {
         const { data, error } = await supabase
           .from("mtg_collection_items")
-          .select("user_id,key,id_card,name,set,set_name,collector_number,finish,qty,image,updated_at")
+          .select("user_id,key,id_card,name,set,set_name,collector_number,finish,rarity,qty,image,updated_at")
           .eq("user_id", session.user.id)
           .range(page * pageSize, (page + 1) * pageSize - 1);
           
@@ -141,6 +143,70 @@ export default function App() {
       hydratedRef.current = true;
     })();
   }, [session?.user?.id]); // Only depend on user ID, not entire session object
+
+  // -----------------------------
+  // Backfill rarity for eksisterende kort som mangler det
+  // -----------------------------
+  const backfillDoneRef = useRef(false);
+
+  useEffect(() => {
+    if (!supabase || !session) return;
+    if (!hydratedRef.current) return;
+    if (backfillDoneRef.current) return;
+
+    const missing = collection.filter((c) => !c.rarity);
+    if (missing.length === 0) {
+      backfillDoneRef.current = true;
+      return;
+    }
+
+    backfillDoneRef.current = true;
+    const uniqueIds = [...new Set(missing.map((c) => c.id))];
+    const BATCH = 75;
+
+    (async () => {
+      const rarityMap = new Map<string, string>();
+      for (let i = 0; i < uniqueIds.length; i += BATCH) {
+        const batch = uniqueIds.slice(i, i + BATCH).map((id) => ({ id }));
+        try {
+          const res = await fetch("https://api.scryfall.com/cards/collection", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ identifiers: batch }),
+          });
+          if (!res.ok) continue;
+          const json = await res.json();
+          for (const card of json.data ?? []) {
+            if (card.rarity) rarityMap.set(card.id, card.rarity);
+          }
+        } catch {
+          // Stille feil - prøv resten
+        }
+      }
+
+      if (rarityMap.size === 0) return;
+
+      // Oppdater state
+      setCollection((prev) =>
+        prev.map((c) => {
+          const r = rarityMap.get(c.id);
+          return r && !c.rarity ? { ...c, rarity: r } : c;
+        }),
+      );
+
+      // Oppdater DB
+      const userId = session.user.id;
+      for (const card of missing) {
+        const r = rarityMap.get(card.id);
+        if (!r) continue;
+        await supabase
+          .from("mtg_collection_items")
+          .update({ rarity: r })
+          .eq("user_id", userId)
+          .eq("key", card.key);
+      }
+    })();
+  }, [collection, session]);
 
   // -----------------------------
   // Auto-synk: upsert endringer når collection endres
@@ -261,6 +327,7 @@ export default function App() {
           set_name: card.set_name,
           collector_number: card.collector_number,
           finish,
+          rarity: card.rarity,
           qty: 1,
           image: getCardImage(card),
         };
@@ -277,6 +344,7 @@ export default function App() {
       set_name: card.set_name,
       collector_number: card.collector_number,
       finish,
+      rarity: card.rarity,
       qty: finalQty,
       image: getCardImage(card),
     };

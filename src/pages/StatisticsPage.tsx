@@ -10,8 +10,6 @@ export default function StatisticsPage({
 }) {
   const [setMetaLoading, setSetMetaLoading] = useState(false);
   const [setCardCounts, setSetCardCounts] = useState<Record<string, number>>({});
-  const [rarityCounts, setRarityCounts] = useState<Record<string, number> | null>(null);
-  const [rarityLoading, setRarityLoading] = useState(false);
 
   // Calculate basic stats from collection
   const stats: CollectionStats = useMemo(() => {
@@ -75,69 +73,15 @@ export default function StatisticsPage({
       .finally(() => setSetMetaLoading(false));
   }, [stats.setStats.length]);
 
-  // Fetch rarity data from Scryfall /cards/collection (POST, max 75 per batch)
-  // Stable key: only re-run when the set of unique card IDs actually changes
-  const rarityKey = useMemo(
-    () => [...new Set(collection.map((c) => c.id))].sort().join(","),
-    [collection],
-  );
-
-  useEffect(() => {
-    if (collection.length === 0) return;
-
-    const uniqueIds = [...new Set(collection.map((c) => c.id))];
-    setRarityCounts(null);
-    setRarityLoading(true);
-
-    // qty per card id (summert over finishes)
-    const qtyById = new Map<string, number>();
-    for (const c of collection) {
-      qtyById.set(c.id, (qtyById.get(c.id) || 0) + c.qty);
+  // Beregn rarity-fordeling direkte fra collection-data
+  const rarityCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const card of collection) {
+      const r = card.rarity ?? "unknown";
+      counts[r] = (counts[r] || 0) + card.qty;
     }
-
-    const BATCH_SIZE = 75;
-    const batches: { id: string }[][] = [];
-    for (let i = 0; i < uniqueIds.length; i += BATCH_SIZE) {
-      batches.push(uniqueIds.slice(i, i + BATCH_SIZE).map((id) => ({ id })));
-    }
-
-    const ctrl = new AbortController();
-
-    (async () => {
-      const counts: Record<string, number> = {};
-      try {
-        for (const batch of batches) {
-          if (ctrl.signal.aborted) return;
-          // POST direkte til Scryfall (støtter CORS)
-          const res = await fetch("https://api.scryfall.com/cards/collection", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ identifiers: batch }),
-            signal: ctrl.signal,
-          });
-          if (!res.ok) {
-            console.warn("Rarity batch feilet:", res.status, await res.text());
-            continue;
-          }
-          const json = await res.json();
-          for (const card of json.data ?? []) {
-            const rarity: string = card.rarity ?? "unknown";
-            const qty = qtyById.get(card.id) || 1;
-            counts[rarity] = (counts[rarity] || 0) + qty;
-          }
-        }
-        if (!ctrl.signal.aborted) setRarityCounts(counts);
-      } catch (e: any) {
-        if (e?.name !== "AbortError") {
-          console.error("Feil ved henting av rarity:", e);
-        }
-      } finally {
-        setRarityLoading(false);
-      }
-    })();
-
-    return () => ctrl.abort();
-  }, [rarityKey]);
+    return counts;
+  }, [collection]);
 
   return (
     <div>
@@ -177,11 +121,7 @@ export default function StatisticsPage({
           <div key={key} className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
             <div className="text-sm text-gray-600 mb-1">{label}</div>
             <div className={`text-3xl font-bold ${color}`}>
-              {rarityLoading
-                ? "..."
-                : rarityCounts
-                  ? (rarityCounts[key] ?? 0).toLocaleString("nb-NO")
-                  : "-"}
+              {(rarityCounts[key] ?? 0).toLocaleString("nb-NO")}
             </div>
           </div>
         ))}
