@@ -15,13 +15,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const scryfallUrl = `https://api.scryfall.com${path.startsWith("/") ? path : "/" + path}`;
 
   try {
-    const response = await fetch(scryfallUrl, {
+    const fetchOptions: RequestInit = {
       method: req.method || "GET",
       headers: {
         "Accept": "application/json",
         "User-Agent": "MTGSamling/1.0 (mtgcoll.com)",
       },
-    });
+    };
+
+    // Forward body for POST requests
+    if (req.method === "POST" && req.body) {
+      (fetchOptions.headers as Record<string, string>)["Content-Type"] = "application/json";
+      fetchOptions.body = JSON.stringify(req.body);
+    }
+
+    const response = await fetch(scryfallUrl, fetchOptions);
 
     // Forward the response status and headers
     res.setHeader("Cache-Control", "public, s-maxage=60, stale-while-revalidate=300");
