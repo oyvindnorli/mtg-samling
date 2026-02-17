@@ -30,7 +30,7 @@ function parseLine(line: string): ParsedLine | null {
       const setName = parts[2];
       const collectorNumber = parts[3];
       const finishRaw = parts[4].toLowerCase();
-      const finish = finishRaw.includes("foil") && !finishRaw.includes("nonfoil") && !finishRaw.includes("non-foil")
+      const finish = finishRaw === "foil"
         ? "foil"
         : "nonfoil";
       return { mode: "exact", name, setCode, setName, collectorNumber, finish };
@@ -42,7 +42,7 @@ function parseLine(line: string): ParsedLine | null {
       const setName = parts[1];
       const collectorNumber = parts[2];
       const finishRaw = parts[3].toLowerCase();
-      const finish = finishRaw.includes("foil") && !finishRaw.includes("nonfoil") && !finishRaw.includes("non-foil")
+      const finish = finishRaw === "foil"
         ? "foil"
         : "nonfoil";
       return { mode: "exact", name: "", setCode, setName, collectorNumber, finish };
