@@ -1,7 +1,42 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { Link } from "react-router-dom";
-import type { OwnedCard } from "../types";
+import type { OwnedCard, ScryfallCard } from "../types";
 import Button from "../components/Button";
+
+type ParsedLine =
+  | { mode: "name"; name: string }
+  | { mode: "exact"; setCode: string; setName: string; collectorNumber: string; finish: string };
+
+type CheckResult = {
+  label: string;
+  owned: OwnedCard[];
+  totalQty: number;
+  parsed: ParsedLine;
+  price?: number | null; // EUR pris for manglende kort
+};
+
+function parseLine(line: string): ParsedLine | null {
+  const trimmed = line.trim();
+  if (!trimmed) return null;
+
+  // Tab-separert = Excel-format: Set code \t Set name \t Collector number \t Foil/nonfoil
+  if (trimmed.includes("\t")) {
+    const parts = trimmed.split("\t").map((s) => s.trim());
+    if (parts.length >= 3) {
+      const setCode = parts[0].toLowerCase();
+      const setName = parts[1];
+      const collectorNumber = parts[2];
+      const finishRaw = (parts[3] ?? "").toLowerCase();
+      const finish = finishRaw.includes("foil") && !finishRaw.includes("nonfoil") && !finishRaw.includes("non-foil")
+        ? "foil"
+        : "nonfoil";
+      return { mode: "exact", setCode, setName, collectorNumber, finish };
+    }
+  }
+
+  // Ellers: kortnavn
+  return { mode: "name", name: trimmed };
+}
 
 export default function CheckListPage({
   collection,
@@ -9,9 +44,11 @@ export default function CheckListPage({
   collection: OwnedCard[];
 }) {
   const [input, setInput] = useState("");
-  const [checkedNames, setCheckedNames] = useState<string[]>([]);
+  const [parsed, setParsed] = useState<ParsedLine[]>([]);
+  const [prices, setPrices] = useState<Map<string, number | null>>(new Map());
+  const [priceLoading, setPriceLoading] = useState(false);
 
-  // Bygg oppslag: kortnavn (lowercase) → alle eide varianter
+  // Oppslag: kortnavn (lowercase) → alle eide varianter
   const ownedByName = useMemo(() => {
     const map = new Map<string, OwnedCard[]>();
     for (const card of collection) {
@@ -22,15 +59,32 @@ export default function CheckListPage({
     return map;
   }, [collection]);
 
+  // Oppslag: "set::collector_number::finish" → OwnedCard[]
+  const ownedByExact = useMemo(() => {
+    const map = new Map<string, OwnedCard[]>();
+    for (const card of collection) {
+      const key = `${card.set}::${card.collector_number}::${card.finish}`;
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(card);
+      // Også uten finish for bredere match
+      const keyAny = `${card.set}::${card.collector_number}`;
+      if (!map.has(keyAny)) map.set(keyAny, []);
+      map.get(keyAny)!.push(card);
+    }
+    return map;
+  }, [collection]);
+
   function handleCheck() {
-    const names = input
-      .split("\n")
-      .map((l) => l.trim())
-      .filter((l) => l.length > 0);
-    setCheckedNames(names);
+    const lines = input.split("\n");
+    const result: ParsedLine[] = [];
+    for (const line of lines) {
+      const p = parseLine(line);
+      if (p) result.push(p);
+    }
+    setParsed(result);
+    setPrices(new Map());
   }
 
-  // Også sjekk med Enter i textarea (Ctrl+Enter)
   function handleKeyDown(e: React.KeyboardEvent) {
     if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
       e.preventDefault();
@@ -38,16 +92,107 @@ export default function CheckListPage({
     }
   }
 
-  const results = useMemo(() => {
-    return checkedNames.map((name) => {
-      const owned = ownedByName.get(name.toLowerCase()) ?? [];
-      const totalQty = owned.reduce((sum, c) => sum + c.qty, 0);
-      return { name, owned, totalQty };
+  const results: CheckResult[] = useMemo(() => {
+    return parsed.map((p) => {
+      if (p.mode === "name") {
+        const owned = ownedByName.get(p.name.toLowerCase()) ?? [];
+        const totalQty = owned.reduce((sum, c) => sum + c.qty, 0);
+        return { label: p.name, owned, totalQty, parsed: p };
+      } else {
+        // Prøv eksakt match (set + cn + finish)
+        const exactKey = `${p.setCode}::${p.collectorNumber}::${p.finish}`;
+        let owned = ownedByExact.get(exactKey) ?? [];
+        if (owned.length === 0) {
+          // Fallback: match uten finish
+          const anyKey = `${p.setCode}::${p.collectorNumber}`;
+          owned = ownedByExact.get(anyKey) ?? [];
+        }
+        const totalQty = owned.reduce((sum, c) => sum + c.qty, 0);
+        const label = `${p.setCode.toUpperCase()} #${p.collectorNumber} (${p.finish})`;
+        return { label, owned, totalQty, parsed: p };
+      }
     });
-  }, [checkedNames, ownedByName]);
+  }, [parsed, ownedByName, ownedByExact]);
 
-  const ownedCount = results.filter((r) => r.totalQty > 0).length;
-  const missingCount = results.filter((r) => r.totalQty === 0).length;
+  // Hent priser for manglende kort
+  const missingItems = useMemo(
+    () => results.filter((r) => r.totalQty === 0),
+    [results],
+  );
+
+  useEffect(() => {
+    if (missingItems.length === 0) return;
+    setPriceLoading(true);
+
+    const identifiers: { set?: string; collector_number?: string; name?: string }[] = [];
+    for (const r of missingItems) {
+      if (r.parsed.mode === "exact") {
+        identifiers.push({ set: r.parsed.setCode, collector_number: r.parsed.collectorNumber });
+      } else {
+        identifiers.push({ name: r.parsed.name });
+      }
+    }
+
+    const BATCH = 75;
+    const ctrl = new AbortController();
+
+    (async () => {
+      const newPrices = new Map<string, number | null>();
+      try {
+        for (let i = 0; i < identifiers.length; i += BATCH) {
+          if (ctrl.signal.aborted) return;
+          const batch = identifiers.slice(i, i + BATCH);
+          const res = await fetch("https://api.scryfall.com/cards/collection", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ identifiers: batch }),
+            signal: ctrl.signal,
+          });
+          if (!res.ok) continue;
+          const json = await res.json();
+          for (const card of json.data ?? []) {
+            // Bruk set+cn som nøkkel for exact, navn for name-mode
+            const keyExact = `${card.set}::${card.collector_number}`;
+            const keyName = (card.name as string).toLowerCase();
+            const eur = parseFloat(card.prices?.eur ?? "") || parseFloat(card.prices?.eur_foil ?? "") || null;
+            newPrices.set(keyExact, eur);
+            if (!newPrices.has(keyName)) newPrices.set(keyName, eur);
+          }
+        }
+      } catch (e: any) {
+        if (e?.name !== "AbortError") console.error("Prisfeil:", e);
+      } finally {
+        if (!ctrl.signal.aborted) {
+          setPrices(newPrices);
+          setPriceLoading(false);
+        }
+      }
+    })();
+
+    return () => ctrl.abort();
+  }, [missingItems]);
+
+  // Koble priser til resultater
+  const resultsWithPrices = useMemo(() => {
+    return results.map((r) => {
+      if (r.totalQty > 0) return r;
+      let price: number | null = null;
+      if (r.parsed.mode === "exact") {
+        price = prices.get(`${r.parsed.setCode}::${r.parsed.collectorNumber}`) ?? null;
+      } else {
+        price = prices.get(r.parsed.name.toLowerCase()) ?? null;
+      }
+      return { ...r, price };
+    });
+  }, [results, prices]);
+
+  const ownedCount = resultsWithPrices.filter((r) => r.totalQty > 0).length;
+  const missingCount = resultsWithPrices.filter((r) => r.totalQty === 0).length;
+  const missingTotal = resultsWithPrices
+    .filter((r) => r.totalQty === 0 && r.price)
+    .reduce((sum, r) => sum + (r.price ?? 0), 0);
+
+  const isExcelMode = parsed.length > 0 && parsed[0].mode === "exact";
 
   return (
     <div>
@@ -59,34 +204,53 @@ export default function CheckListPage({
 
       <h1 className="text-xl font-bold mb-4">Sjekk kortliste</h1>
       <p className="text-sm text-gray-600 mb-4">
-        Lim inn kortnavn, ett per linje. Trykk <strong>Sjekk</strong> for å se
-        om du eier dem.
+        Lim inn kortnavn (ett per linje) eller kopier fra Excel med kolonnene:{" "}
+        <code className="bg-gray-100 px-1 rounded">Set code</code>{" "}
+        <code className="bg-gray-100 px-1 rounded">Set name</code>{" "}
+        <code className="bg-gray-100 px-1 rounded">Collector number</code>{" "}
+        <code className="bg-gray-100 px-1 rounded">Foil/nonfoil</code>
       </p>
 
       <textarea
         className="w-full h-48 rounded-xl border border-gray-300 px-4 py-3 text-sm font-mono focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-        placeholder={"Lightning Bolt\nCounterspell\nSwords to Plowshares"}
+        placeholder={"Lightning Bolt\nCounterspell\n\nEller fra Excel:\nDOM\tDominaria\t1\tnonfoil\nKHM\tKaldheim\t45\tfoil"}
         value={input}
         onChange={(e) => setInput(e.target.value)}
         onKeyDown={handleKeyDown}
       />
 
-      <div className="flex items-center gap-3 mt-3">
+      <div className="flex items-center gap-3 mt-3 flex-wrap">
         <Button onClick={handleCheck} disabled={!input.trim()}>
           Sjekk
         </Button>
-        {checkedNames.length > 0 && (
+        {parsed.length > 0 && (
           <span className="text-sm text-gray-600">
-            {ownedCount} eid / {missingCount} mangler av {results.length} kort
+            {ownedCount} eid / {missingCount} mangler av {resultsWithPrices.length} kort
+            {isExcelMode && <span className="ml-1 text-gray-400">(Excel-modus)</span>}
           </span>
         )}
       </div>
 
-      {results.length > 0 && (
+      {missingCount > 0 && (
+        <div className="mt-4 rounded-xl border border-gray-200 bg-white px-4 py-3 shadow-sm">
+          <div className="text-sm text-gray-600">
+            Estimert pris for {missingCount} manglende kort (Cardmarket):
+          </div>
+          <div className="text-2xl font-bold mt-1">
+            {priceLoading
+              ? "Henter priser..."
+              : missingTotal > 0
+                ? `€${missingTotal.toFixed(2)}`
+                : "Ingen prisdata"}
+          </div>
+        </div>
+      )}
+
+      {resultsWithPrices.length > 0 && (
         <div className="mt-6 space-y-2">
-          {results.map((r, i) => (
+          {resultsWithPrices.map((r, i) => (
             <div
-              key={`${r.name}-${i}`}
+              key={`${r.label}-${i}`}
               className={`rounded-xl border px-4 py-3 ${
                 r.totalQty > 0
                   ? "border-green-300 bg-green-50"
@@ -94,16 +258,21 @@ export default function CheckListPage({
               }`}
             >
               <div className="flex items-center justify-between">
-                <span className="font-medium">{r.name}</span>
-                {r.totalQty > 0 ? (
-                  <span className="text-green-700 text-sm font-semibold">
-                    Eid ({r.totalQty})
-                  </span>
-                ) : (
-                  <span className="text-red-600 text-sm font-semibold">
-                    Mangler
-                  </span>
-                )}
+                <span className="font-medium">{r.label}</span>
+                <div className="flex items-center gap-3">
+                  {r.totalQty === 0 && r.price != null && (
+                    <span className="text-xs text-gray-500">€{r.price.toFixed(2)}</span>
+                  )}
+                  {r.totalQty > 0 ? (
+                    <span className="text-green-700 text-sm font-semibold">
+                      Eid ({r.totalQty})
+                    </span>
+                  ) : (
+                    <span className="text-red-600 text-sm font-semibold">
+                      Mangler
+                    </span>
+                  )}
+                </div>
               </div>
 
               {r.owned.length > 0 && (
