@@ -270,7 +270,7 @@ export default function CheckListPage({
                   <img
                     src={r.image}
                     alt={r.label}
-                    className="w-24 rounded-lg flex-shrink-0"
+                    className="w-48 rounded-lg flex-shrink-0"
                     loading="lazy"
                   />
                 )}
