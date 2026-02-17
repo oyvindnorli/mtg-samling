@@ -5,7 +5,7 @@ import Button from "../components/Button";
 
 type ParsedLine =
   | { mode: "name"; name: string }
-  | { mode: "exact"; setCode: string; setName: string; collectorNumber: string; finish: string };
+  | { mode: "exact"; name: string; setCode: string; setName: string; collectorNumber: string; finish: string };
 
 type CheckResult = {
   label: string;
@@ -19,18 +19,33 @@ function parseLine(line: string): ParsedLine | null {
   const trimmed = line.trim();
   if (!trimmed) return null;
 
-  // Tab-separert = Excel-format: Set code \t Set name \t Collector number \t Foil/nonfoil
+  // Tab-separert = Excel-format
   if (trimmed.includes("\t")) {
     const parts = trimmed.split("\t").map((s) => s.trim());
-    if (parts.length >= 3) {
-      const setCode = parts[0].toLowerCase();
-      const setName = parts[1];
-      const collectorNumber = parts[2];
-      const finishRaw = (parts[3] ?? "").toLowerCase();
+
+    // 5+ kolonner: Name, Set code, Set name, Collector number, Finish
+    if (parts.length >= 5) {
+      const name = parts[0];
+      const setCode = parts[1].toLowerCase();
+      const setName = parts[2];
+      const collectorNumber = parts[3];
+      const finishRaw = parts[4].toLowerCase();
       const finish = finishRaw.includes("foil") && !finishRaw.includes("nonfoil") && !finishRaw.includes("non-foil")
         ? "foil"
         : "nonfoil";
-      return { mode: "exact", setCode, setName, collectorNumber, finish };
+      return { mode: "exact", name, setCode, setName, collectorNumber, finish };
+    }
+
+    // 4 kolonner: Set code, Set name, Collector number, Finish
+    if (parts.length >= 4) {
+      const setCode = parts[0].toLowerCase();
+      const setName = parts[1];
+      const collectorNumber = parts[2];
+      const finishRaw = parts[3].toLowerCase();
+      const finish = finishRaw.includes("foil") && !finishRaw.includes("nonfoil") && !finishRaw.includes("non-foil")
+        ? "foil"
+        : "nonfoil";
+      return { mode: "exact", name: "", setCode, setName, collectorNumber, finish };
     }
   }
 
@@ -108,7 +123,8 @@ export default function CheckListPage({
           owned = ownedByExact.get(anyKey) ?? [];
         }
         const totalQty = owned.reduce((sum, c) => sum + c.qty, 0);
-        const label = `${p.setCode.toUpperCase()} #${p.collectorNumber} (${p.finish})`;
+        const nameStr = p.name ? `${p.name} - ` : "";
+        const label = `${nameStr}${p.setCode.toUpperCase()} #${p.collectorNumber} (${p.finish})`;
         return { label, owned, totalQty, parsed: p };
       }
     });
@@ -205,6 +221,7 @@ export default function CheckListPage({
       <h1 className="text-xl font-bold mb-4">Sjekk kortliste</h1>
       <p className="text-sm text-gray-600 mb-4">
         Lim inn kortnavn (ett per linje) eller kopier fra Excel med kolonnene:{" "}
+        <code className="bg-gray-100 px-1 rounded">Name</code>{" "}
         <code className="bg-gray-100 px-1 rounded">Set code</code>{" "}
         <code className="bg-gray-100 px-1 rounded">Set name</code>{" "}
         <code className="bg-gray-100 px-1 rounded">Collector number</code>{" "}
