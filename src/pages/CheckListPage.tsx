@@ -1,7 +1,8 @@
 import React, { useState, useMemo, useEffect } from "react";
 import { Link } from "react-router-dom";
-import type { OwnedCard, ScryfallCard } from "../types";
+import type { OwnedCard } from "../types";
 import Button from "../components/Button";
+import { scryfallJson } from "../utils/scryfall";
 
 type ParsedLine =
   | { mode: "name"; name: string }
@@ -141,33 +142,21 @@ export default function CheckListPage({
     if (missingItems.length === 0) return;
     setPriceLoading(true);
 
-    const identifiers: { set?: string; collector_number?: string; name?: string }[] = [];
-    for (const r of missingItems) {
-      if (r.parsed.mode === "exact") {
-        identifiers.push({ set: r.parsed.setCode, collector_number: r.parsed.collectorNumber });
-      } else {
-        identifiers.push({ name: r.parsed.name });
-      }
-    }
-
-    const BATCH = 75;
-    const ctrl = new AbortController();
+    let cancelled = false;
 
     (async () => {
       const newData = new Map<string, { price: number | null; image: string | null }>();
       try {
-        for (let i = 0; i < identifiers.length; i += BATCH) {
-          if (ctrl.signal.aborted) return;
-          const batch = identifiers.slice(i, i + BATCH);
-          const res = await fetch("https://api.scryfall.com/cards/collection", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ identifiers: batch }),
-            signal: ctrl.signal,
-          });
-          if (!res.ok) continue;
-          const json = await res.json();
-          for (const card of json.data ?? []) {
+        for (const r of missingItems) {
+          if (cancelled) return;
+          try {
+            let card: any;
+            if (r.parsed.mode === "exact") {
+              card = await scryfallJson(`/cards/${r.parsed.setCode}/${r.parsed.collectorNumber}`);
+            } else {
+              card = await scryfallJson(`/cards/named?exact=${encodeURIComponent(r.parsed.name)}`);
+            }
+            if (!card || card.object === "error") continue;
             const keyExact = `${card.set}::${card.collector_number}`;
             const keyName = (card.name as string).toLowerCase();
             const eur = parseFloat(card.prices?.eur ?? "") || parseFloat(card.prices?.eur_foil ?? "") || null;
@@ -175,19 +164,19 @@ export default function CheckListPage({
             const entry = { price: eur, image };
             newData.set(keyExact, entry);
             if (!newData.has(keyName)) newData.set(keyName, entry);
+          } catch {
+            // Kort ikke funnet, hopp over
           }
         }
-      } catch (e: any) {
-        if (e?.name !== "AbortError") console.error("Prisfeil:", e);
       } finally {
-        if (!ctrl.signal.aborted) {
+        if (!cancelled) {
           setCardData(newData);
           setPriceLoading(false);
         }
       }
     })();
 
-    return () => ctrl.abort();
+    return () => { cancelled = true; };
   }, [missingItems]);
 
   // Koble priser og bilder til resultater
