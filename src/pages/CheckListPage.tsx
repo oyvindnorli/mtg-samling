@@ -12,7 +12,8 @@ type CheckResult = {
   owned: OwnedCard[];
   totalQty: number;
   parsed: ParsedLine;
-  price?: number | null; // EUR pris for manglende kort
+  price?: number | null;
+  image?: string | null;
 };
 
 function parseLine(line: string): ParsedLine | null {
@@ -60,7 +61,7 @@ export default function CheckListPage({
 }) {
   const [input, setInput] = useState("");
   const [parsed, setParsed] = useState<ParsedLine[]>([]);
-  const [prices, setPrices] = useState<Map<string, number | null>>(new Map());
+  const [cardData, setCardData] = useState<Map<string, { price: number | null; image: string | null }>>(new Map());
   const [priceLoading, setPriceLoading] = useState(false);
 
   // Oppslag: kortnavn (lowercase) → alle eide varianter
@@ -97,7 +98,7 @@ export default function CheckListPage({
       if (p) result.push(p);
     }
     setParsed(result);
-    setPrices(new Map());
+    setCardData(new Map());
   }
 
   function handleKeyDown(e: React.KeyboardEvent) {
@@ -153,7 +154,7 @@ export default function CheckListPage({
     const ctrl = new AbortController();
 
     (async () => {
-      const newPrices = new Map<string, number | null>();
+      const newData = new Map<string, { price: number | null; image: string | null }>();
       try {
         for (let i = 0; i < identifiers.length; i += BATCH) {
           if (ctrl.signal.aborted) return;
@@ -167,19 +168,20 @@ export default function CheckListPage({
           if (!res.ok) continue;
           const json = await res.json();
           for (const card of json.data ?? []) {
-            // Bruk set+cn som nøkkel for exact, navn for name-mode
             const keyExact = `${card.set}::${card.collector_number}`;
             const keyName = (card.name as string).toLowerCase();
             const eur = parseFloat(card.prices?.eur ?? "") || parseFloat(card.prices?.eur_foil ?? "") || null;
-            newPrices.set(keyExact, eur);
-            if (!newPrices.has(keyName)) newPrices.set(keyName, eur);
+            const image = card.image_uris?.normal ?? card.card_faces?.[0]?.image_uris?.normal ?? null;
+            const entry = { price: eur, image };
+            newData.set(keyExact, entry);
+            if (!newData.has(keyName)) newData.set(keyName, entry);
           }
         }
       } catch (e: any) {
         if (e?.name !== "AbortError") console.error("Prisfeil:", e);
       } finally {
         if (!ctrl.signal.aborted) {
-          setPrices(newPrices);
+          setCardData(newData);
           setPriceLoading(false);
         }
       }
@@ -188,19 +190,19 @@ export default function CheckListPage({
     return () => ctrl.abort();
   }, [missingItems]);
 
-  // Koble priser til resultater
+  // Koble priser og bilder til resultater
   const resultsWithPrices = useMemo(() => {
     return results.map((r) => {
       if (r.totalQty > 0) return r;
-      let price: number | null = null;
+      let data: { price: number | null; image: string | null } | undefined;
       if (r.parsed.mode === "exact") {
-        price = prices.get(`${r.parsed.setCode}::${r.parsed.collectorNumber}`) ?? null;
+        data = cardData.get(`${r.parsed.setCode}::${r.parsed.collectorNumber}`);
       } else {
-        price = prices.get(r.parsed.name.toLowerCase()) ?? null;
+        data = cardData.get(r.parsed.name.toLowerCase());
       }
-      return { ...r, price };
+      return { ...r, price: data?.price ?? null, image: data?.image ?? null };
     });
-  }, [results, prices]);
+  }, [results, cardData]);
 
   const ownedCount = resultsWithPrices.filter((r) => r.totalQty > 0).length;
   const missingCount = resultsWithPrices.filter((r) => r.totalQty === 0).length;
@@ -274,34 +276,46 @@ export default function CheckListPage({
                   : "border-red-200 bg-red-50"
               }`}
             >
-              <div className="flex items-center justify-between">
-                <span className="font-medium">{r.label}</span>
-                <div className="flex items-center gap-3">
-                  {r.totalQty === 0 && r.price != null && (
-                    <span className="text-xs text-gray-500">€{r.price.toFixed(2)}</span>
-                  )}
-                  {r.totalQty > 0 ? (
-                    <span className="text-green-700 text-sm font-semibold">
-                      Eid ({r.totalQty})
-                    </span>
-                  ) : (
-                    <span className="text-red-600 text-sm font-semibold">
-                      Mangler
-                    </span>
+              <div className="flex gap-3">
+                {r.totalQty === 0 && r.image && (
+                  <img
+                    src={r.image}
+                    alt={r.label}
+                    className="w-24 rounded-lg flex-shrink-0"
+                    loading="lazy"
+                  />
+                )}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between">
+                    <span className="font-medium">{r.label}</span>
+                    <div className="flex items-center gap-3">
+                      {r.totalQty === 0 && r.price != null && (
+                        <span className="text-xs text-gray-500">€{r.price.toFixed(2)}</span>
+                      )}
+                      {r.totalQty > 0 ? (
+                        <span className="text-green-700 text-sm font-semibold">
+                          Eid ({r.totalQty})
+                        </span>
+                      ) : (
+                        <span className="text-red-600 text-sm font-semibold">
+                          Mangler
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {r.owned.length > 0 && (
+                    <div className="mt-1 text-xs text-gray-600 space-y-0.5">
+                      {r.owned.map((c) => (
+                        <div key={c.key}>
+                          {c.set_name} ({c.set.toUpperCase()}) #{c.collector_number}{" "}
+                          &middot; {c.finish} &middot; {c.qty}x
+                        </div>
+                      ))}
+                    </div>
                   )}
                 </div>
               </div>
-
-              {r.owned.length > 0 && (
-                <div className="mt-1 text-xs text-gray-600 space-y-0.5">
-                  {r.owned.map((c) => (
-                    <div key={c.key}>
-                      {c.set_name} ({c.set.toUpperCase()}) #{c.collector_number}{" "}
-                      &middot; {c.finish} &middot; {c.qty}x
-                    </div>
-                  ))}
-                </div>
-              )}
             </div>
           ))}
         </div>
