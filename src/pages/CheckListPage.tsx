@@ -272,7 +272,22 @@ export default function CheckListPage({
           <>
             {missing.length > 0 && (
               <div className="mt-6">
-                <h2 className="text-lg font-semibold mb-3 text-red-700">Mangler ({missing.length})</h2>
+                <div className="flex items-center justify-between mb-3">
+                  <h2 className="text-lg font-semibold text-red-700">Mangler ({missing.length})</h2>
+                  <button
+                    className="text-sm underline underline-offset-2 text-gray-600"
+                    onClick={() => {
+                      const text = missing.map((r) => {
+                        const name = r.parsed.mode === "exact" && r.parsed.name ? r.parsed.name : r.label;
+                        const price = r.price != null ? ` - €${r.price.toFixed(2)}` : "";
+                        return `${name}${price}`;
+                      }).join("\n");
+                      navigator.clipboard.writeText(text);
+                    }}
+                  >
+                    Kopier liste
+                  </button>
+                </div>
                 <div className="space-y-2">
                   {missing.map((r, i) => (
                     <div key={`miss-${i}`} className="rounded-xl border border-red-200 bg-red-50 px-4 py-3">
