@@ -132,14 +132,9 @@ export default function CheckListPage({
     });
   }, [parsed, ownedByName, ownedByExact]);
 
-  // Hent priser for manglende kort
-  const missingItems = useMemo(
-    () => results.filter((r) => r.totalQty === 0),
-    [results],
-  );
-
+  // Hent priser og bilder for alle kort i lista
   useEffect(() => {
-    if (missingItems.length === 0) return;
+    if (results.length === 0) return;
     setPriceLoading(true);
 
     let cancelled = false;
@@ -147,7 +142,7 @@ export default function CheckListPage({
     (async () => {
       const newData = new Map<string, { price: number | null; image: string | null }>();
       try {
-        for (const r of missingItems) {
+        for (const r of results) {
           if (cancelled) return;
           try {
             let card: any;
@@ -177,12 +172,11 @@ export default function CheckListPage({
     })();
 
     return () => { cancelled = true; };
-  }, [missingItems]);
+  }, [results]);
 
-  // Koble priser og bilder til resultater
+  // Koble priser og bilder til alle resultater
   const resultsWithPrices = useMemo(() => {
     return results.map((r) => {
-      if (r.totalQty > 0) return r;
       let data: { price: number | null; image: string | null } | undefined;
       if (r.parsed.mode === "exact") {
         data = cardData.get(`${r.parsed.setCode}::${r.parsed.collectorNumber}`);
@@ -195,6 +189,9 @@ export default function CheckListPage({
 
   const ownedCount = resultsWithPrices.filter((r) => r.totalQty > 0).length;
   const missingCount = resultsWithPrices.filter((r) => r.totalQty === 0).length;
+  const totalAll = resultsWithPrices
+    .filter((r) => r.price)
+    .reduce((sum, r) => sum + (r.price ?? 0), 0);
   const missingTotal = resultsWithPrices
     .filter((r) => r.totalQty === 0 && r.price)
     .reduce((sum, r) => sum + (r.price ?? 0), 0);
@@ -239,76 +236,95 @@ export default function CheckListPage({
         )}
       </div>
 
-      {missingCount > 0 && (
-        <div className="mt-4 rounded-xl border border-gray-200 bg-white px-4 py-3 shadow-sm">
-          <div className="text-sm text-gray-600">
-            Estimert pris for {missingCount} manglende kort (Cardmarket):
+      {parsed.length > 0 && (
+        <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="rounded-xl border border-gray-200 bg-white px-4 py-3 shadow-sm">
+            <div className="text-sm text-gray-600">Hele lista (Cardmarket)</div>
+            <div className="text-2xl font-bold mt-1">
+              {priceLoading
+                ? "Henter priser..."
+                : totalAll > 0
+                  ? `€${totalAll.toFixed(2)}`
+                  : "Ingen prisdata"}
+            </div>
           </div>
-          <div className="text-2xl font-bold mt-1">
-            {priceLoading
-              ? "Henter priser..."
-              : missingTotal > 0
-                ? `€${missingTotal.toFixed(2)}`
-                : "Ingen prisdata"}
-          </div>
-        </div>
-      )}
-
-      {resultsWithPrices.length > 0 && (
-        <div className="mt-6 space-y-2">
-          {resultsWithPrices.map((r, i) => (
-            <div
-              key={`${r.label}-${i}`}
-              className={`rounded-xl border px-4 py-3 ${
-                r.totalQty > 0
-                  ? "border-green-300 bg-green-50"
-                  : "border-red-200 bg-red-50"
-              }`}
-            >
-              <div className="flex gap-3">
-                {r.totalQty === 0 && r.image && (
-                  <img
-                    src={r.image}
-                    alt={r.label}
-                    className="w-48 rounded-lg flex-shrink-0"
-                    loading="lazy"
-                  />
-                )}
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between">
-                    <span className="font-medium">{r.label}</span>
-                    <div className="flex items-center gap-3">
-                      {r.totalQty === 0 && r.price != null && (
-                        <span className="text-xs text-gray-500">€{r.price.toFixed(2)}</span>
-                      )}
-                      {r.totalQty > 0 ? (
-                        <span className="text-green-700 text-sm font-semibold">
-                          Eid ({r.totalQty})
-                        </span>
-                      ) : (
-                        <span className="text-red-600 text-sm font-semibold">
-                          Mangler
-                        </span>
-                      )}
-                    </div>
-                  </div>
-
-                  {r.owned.length > 0 && (
-                    <div className="mt-1 text-xs text-gray-600 space-y-0.5">
-                      {r.owned.map((c) => (
-                        <div key={c.key}>
-                          {c.set_name} ({c.set.toUpperCase()}) #{c.collector_number}{" "}
-                          &middot; {c.finish} &middot; {c.qty}x
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
+          {missingCount > 0 && (
+            <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 shadow-sm">
+              <div className="text-sm text-gray-600">
+                {missingCount} manglende kort
+              </div>
+              <div className="text-2xl font-bold mt-1 text-red-700">
+                {priceLoading
+                  ? "Henter priser..."
+                  : missingTotal > 0
+                    ? `€${missingTotal.toFixed(2)}`
+                    : "Ingen prisdata"}
               </div>
             </div>
-          ))}
+          )}
         </div>
       )}
+
+      {resultsWithPrices.length > 0 && (() => {
+        const missing = resultsWithPrices.filter((r) => r.totalQty === 0);
+        const owned = resultsWithPrices.filter((r) => r.totalQty > 0);
+        return (
+          <>
+            {missing.length > 0 && (
+              <div className="mt-6">
+                <h2 className="text-lg font-semibold mb-3 text-red-700">Mangler ({missing.length})</h2>
+                <div className="space-y-2">
+                  {missing.map((r, i) => (
+                    <div key={`miss-${i}`} className="rounded-xl border border-red-200 bg-red-50 px-4 py-3">
+                      <div className="flex gap-3">
+                        {r.image && (
+                          <img src={r.image} alt={r.label} className="w-48 rounded-lg flex-shrink-0" loading="lazy" />
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between">
+                            <span className="font-medium">{r.label}</span>
+                            <div className="flex items-center gap-3">
+                              {r.price != null && <span className="text-xs text-gray-500">€{r.price.toFixed(2)}</span>}
+                              <span className="text-red-600 text-sm font-semibold">Mangler</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {owned.length > 0 && (
+              <div className="mt-6">
+                <h2 className="text-lg font-semibold mb-3 text-green-700">Eid ({owned.length})</h2>
+                <div className="space-y-2">
+                  {owned.map((r, i) => (
+                    <div key={`own-${i}`} className="rounded-xl border border-green-300 bg-green-50 px-4 py-3">
+                      <div className="flex items-center justify-between">
+                        <span className="font-medium">{r.label}</span>
+                        <div className="flex items-center gap-3">
+                          {r.price != null && <span className="text-xs text-gray-500">€{r.price.toFixed(2)}</span>}
+                          <span className="text-green-700 text-sm font-semibold">Eid ({r.totalQty})</span>
+                        </div>
+                      </div>
+                      <div className="mt-1 text-xs text-gray-600 space-y-0.5">
+                        {r.owned.map((c) => (
+                          <div key={c.key}>
+                            {c.set_name} ({c.set.toUpperCase()}) #{c.collector_number}{" "}
+                            &middot; {c.finish} &middot; {c.qty}x
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </>
+        );
+      })()}
     </div>
   );
 }
