@@ -278,9 +278,7 @@ export default function CheckListPage({
                     className="text-sm underline underline-offset-2 text-gray-600"
                     onClick={() => {
                       const text = missing.map((r) => {
-                        const name = r.parsed.mode === "exact" && r.parsed.name ? r.parsed.name : r.label;
-                        const price = r.price != null ? `€${r.price.toFixed(2)}` : "";
-                        return price ? `${name}; ${price}` : name;
+                        return r.parsed.mode === "exact" && r.parsed.name ? r.parsed.name : r.label;
                       }).join("\n");
                       navigator.clipboard.writeText(text);
                     }}
