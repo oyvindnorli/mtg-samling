@@ -73,6 +73,19 @@ export default function StatisticsPage({
       .finally(() => setSetMetaLoading(false));
   }, [stats.setStats.length]);
 
+  // Beregn total verdi fra collection-data
+  const totalValue = useMemo(() => {
+    let sum = 0;
+    let cardsWithPrice = 0;
+    for (const card of collection) {
+      if (card.price_eur) {
+        sum += card.price_eur * card.qty;
+        cardsWithPrice += card.qty;
+      }
+    }
+    return { sum, cardsWithPrice };
+  }, [collection]);
+
   // Beregn rarity-fordeling direkte fra collection-data
   const rarityCounts = useMemo(() => {
     const counts: Record<string, number> = {};
@@ -93,7 +106,7 @@ export default function StatisticsPage({
       </div>
 
       {/* Overview cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
         <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
           <div className="text-sm text-gray-600 mb-1">Totalt antall kort</div>
           <div className="text-3xl font-bold">{stats.totalQty.toLocaleString("nb-NO")}</div>
@@ -105,6 +118,19 @@ export default function StatisticsPage({
         <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
           <div className="text-sm text-gray-600 mb-1">Sett representert</div>
           <div className="text-3xl font-bold">{stats.totalSets.toLocaleString("nb-NO")}</div>
+        </div>
+        <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+          <div className="text-sm text-gray-600 mb-1">Estimert verdi (Cardmarket)</div>
+          <div className="text-3xl font-bold">
+            {totalValue.sum > 0
+              ? `€${totalValue.sum.toFixed(0)}`
+              : "-"}
+          </div>
+          {totalValue.cardsWithPrice > 0 && totalValue.cardsWithPrice < stats.totalQty && (
+            <div className="text-xs text-gray-400 mt-1">
+              Basert på {totalValue.cardsWithPrice} av {stats.totalQty} kort
+            </div>
+          )}
         </div>
       </div>
 

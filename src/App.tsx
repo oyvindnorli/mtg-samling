@@ -29,6 +29,7 @@ function toDb(userId: string, item: OwnedCard): DbCollectionItem {
     collector_number: item.collector_number,
     finish: item.finish,
     rarity: item.rarity ?? null,
+    price_eur: item.price_eur ?? null,
     qty: item.qty,
     image: item.image ?? null,
     updated_at: new Date().toISOString(),
@@ -44,6 +45,7 @@ function fromDb(row: DbCollectionItem): OwnedCard {
     collector_number: row.collector_number,
     finish: row.finish,
     rarity: row.rarity ?? undefined,
+    price_eur: row.price_eur ?? undefined,
     qty: row.qty,
     image: row.image ?? undefined,
   };
@@ -107,7 +109,7 @@ export default function App() {
       while (true) {
         const { data, error } = await supabase
           .from("mtg_collection_items")
-          .select("user_id,key,id_card,name,set,set_name,collector_number,finish,rarity,qty,image,updated_at")
+          .select("user_id,key,id_card,name,set,set_name,collector_number,finish,rarity,price_eur,qty,image,updated_at")
           .eq("user_id", session.user.id)
           .range(page * pageSize, (page + 1) * pageSize - 1);
           
@@ -328,6 +330,7 @@ export default function App() {
           collector_number: card.collector_number,
           finish,
           rarity: card.rarity,
+          price_eur: parseFloat(finish === "foil" ? (card.prices?.eur_foil ?? card.prices?.eur ?? "") : (card.prices?.eur ?? "")) || undefined,
           qty: 1,
           image: getCardImage(card),
         };
@@ -345,6 +348,7 @@ export default function App() {
       collector_number: card.collector_number,
       finish,
       rarity: card.rarity,
+      price_eur: parseFloat(finish === "foil" ? (card.prices?.eur_foil ?? card.prices?.eur ?? "") : (card.prices?.eur ?? "")) || undefined,
       qty: finalQty,
       image: getCardImage(card),
     };

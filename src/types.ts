@@ -50,6 +50,7 @@ export type OwnedCard = {
   collector_number: string;
   finish: string;
   rarity?: string;
+  price_eur?: number;
   qty: number;
   image?: string;
 };
@@ -64,6 +65,7 @@ export type DbCollectionItem = {
   collector_number: string;
   finish: string;
   rarity?: string | null;
+  price_eur?: number | null;
   qty: number;
   image: string | null;
   updated_at?: string;
