@@ -74,6 +74,16 @@ export default function ResultCard({
           ) : (
             <span>{card.set_name}</span>
           )} {" "}· #{card.collector_number}
+          {card.rarity && (
+            <span className={`ml-1 capitalize ${
+              card.rarity === "mythic" ? "text-orange-600" :
+              card.rarity === "rare" ? "text-yellow-600" :
+              card.rarity === "uncommon" ? "text-gray-500" :
+              "text-gray-400"
+            }`}>
+              · {card.rarity}
+            </span>
+          )}
         </div>
 
         {/* Finish-badges (viser evt. antall pr finish) */}
