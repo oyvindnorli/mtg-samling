@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import type { OwnedCard, SetStats, CollectionStats } from "../types";
-import { getSetMetaBatch } from "../utils/setMetaCache";
+import { getSetUniqueCardCount } from "../utils/setMetaCache";
 
 export default function StatisticsPage({
   collection,
@@ -11,20 +11,20 @@ export default function StatisticsPage({
   const [setMetaLoading, setSetMetaLoading] = useState(false);
   const [setCardCounts, setSetCardCounts] = useState<Record<string, number>>({});
 
-  // Calculate basic stats from collection
+  // Calculate basic stats from collection (unique by card name, not printing)
   const stats: CollectionStats = useMemo(() => {
-    const setMap = new Map<string, { set_name: string; totalQty: number; uniqueIds: Set<string> }>();
+    const setMap = new Map<string, { set_name: string; totalQty: number; uniqueNames: Set<string> }>();
 
     for (const card of collection) {
       const existing = setMap.get(card.set);
       if (existing) {
         existing.totalQty += card.qty;
-        existing.uniqueIds.add(card.id);
+        existing.uniqueNames.add(card.name);
       } else {
         setMap.set(card.set, {
           set_name: card.set_name,
           totalQty: card.qty,
-          uniqueIds: new Set([card.id]),
+          uniqueNames: new Set([card.name]),
         });
       }
     }
@@ -35,9 +35,9 @@ export default function StatisticsPage({
         set,
         set_name: data.set_name,
         totalQty: data.totalQty,
-        uniqueCards: data.uniqueIds.size,
+        uniqueCards: data.uniqueNames.size,
         setCardCount: cardCount,
-        completionPercent: cardCount ? Math.round((data.uniqueIds.size / cardCount) * 100) : undefined,
+        completionPercent: cardCount ? Math.round((data.uniqueNames.size / cardCount) * 100) : undefined,
       };
     });
 
@@ -45,7 +45,7 @@ export default function StatisticsPage({
     setStats.sort((a, b) => b.totalQty - a.totalQty);
 
     const totalQty = collection.reduce((sum, card) => sum + card.qty, 0);
-    const totalUniqueCards = new Set(collection.map((c) => c.id)).size;
+    const totalUniqueCards = new Set(collection.map((c) => c.name)).size;
 
     return {
       totalQty,
@@ -55,22 +55,26 @@ export default function StatisticsPage({
     };
   }, [collection, setCardCounts]);
 
-  // Fetch set metadata for completion percentages
+  // Fetch unique card counts per set for completion percentages
   useEffect(() => {
     if (stats.setStats.length === 0) return;
+    let cancelled = false;
 
     const setCodes = stats.setStats.map((s) => s.set);
     setSetMetaLoading(true);
 
-    getSetMetaBatch(setCodes)
-      .then((meta) => {
-        const counts: Record<string, number> = {};
-        for (const [code, data] of Object.entries(meta)) {
-          counts[code] = data.card_count;
+    Promise.all(
+      setCodes.map(async (code) => {
+        const count = await getSetUniqueCardCount(code);
+        if (!cancelled && count != null) {
+          setSetCardCounts((prev) => ({ ...prev, [code]: count }));
         }
-        setSetCardCounts(counts);
       })
-      .finally(() => setSetMetaLoading(false));
+    ).finally(() => {
+      if (!cancelled) setSetMetaLoading(false);
+    });
+
+    return () => { cancelled = true; };
   }, [stats.setStats.length]);
 
   // Beregn total verdi fra collection-data

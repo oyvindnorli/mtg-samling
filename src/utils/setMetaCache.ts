@@ -130,3 +130,50 @@ export async function getSetMetaBatch(setCodes: string[]): Promise<Record<string
 
   return result;
 }
+
+// Cache for unique card counts (by oracle/name, not printing) per set
+const UNIQUE_COUNT_CACHE_KEY = "scryfall_set_unique_counts";
+
+function getUniqueCountCache(): Record<string, { count: number; fetchedAt: number }> {
+  try {
+    const raw = localStorage.getItem(UNIQUE_COUNT_CACHE_KEY);
+    if (!raw) return {};
+    return JSON.parse(raw);
+  } catch {
+    return {};
+  }
+}
+
+function saveUniqueCountCache(cache: Record<string, { count: number; fetchedAt: number }>) {
+  try {
+    localStorage.setItem(UNIQUE_COUNT_CACHE_KEY, JSON.stringify(cache));
+  } catch {}
+}
+
+// Fetch unique card count for a set (deduplicated by oracle_id / card name)
+export async function getSetUniqueCardCount(setCode: string): Promise<number | null> {
+  const cache = getUniqueCountCache();
+  const cached = cache[setCode];
+  if (cached && Date.now() - cached.fetchedAt < TTL_MS) {
+    return cached.count;
+  }
+
+  try {
+    const params = new URLSearchParams();
+    params.set("q", `set:${setCode} -is:digital`);
+    params.set("unique", "cards");
+
+    const data = await scryfallJson(`/cards/search?${params.toString()}`);
+    const count = data.total_cards ?? null;
+
+    if (count != null) {
+      const newCache = getUniqueCountCache();
+      newCache[setCode] = { count, fetchedAt: Date.now() };
+      saveUniqueCountCache(newCache);
+    }
+
+    return count;
+  } catch {
+    return cached?.count ?? null;
+  }
+}
